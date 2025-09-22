@@ -478,11 +478,11 @@ export function DataTable({ data, totalCount, formOptions, onEdit, isLoading = f
   
     toast.promise(promise, {
       loading: 'Memperbarui status...',
-      success: (data) => { // ✅ PERBAIKAN: Menggunakan 'data' sebagai nama parameter
+      success: (data) => {
         router.refresh();
         setFlashingRowId(entryId);
         setTimeout(() => setFlashingRowId(null), 1500);
-        return data.message || 'Status berhasil diperbarui!'; // ✅ PERBAIKAN: Mengakses 'data.message'
+        return data.message || 'Status berhasil diperbarui!';
       },
       error: (err) => {
         return err instanceof Error ? err.message : 'Terjadi kesalahan tidak diketahui.';
