@@ -1,24 +1,64 @@
-// app/api/hki/[id]/route.ts
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { createClient } from '@/utils/supabase/server'
+import { SupabaseClient } from '@supabase/supabase-js'
+import { z } from 'zod'
 import { Database } from '@/lib/database.types'
 
 export const dynamic = 'force-dynamic'
 
+// --- KONSTANTA ---
 const HKI_TABLE = 'hki'
 const PEMOHON_TABLE = 'pemohon'
 const HKI_BUCKET = 'sertifikat-hki'
 
-const ALIASED_SELECT_QUERY = `
-  id_hki, nama_hki, jenis_produk, tahun_fasilitasi, sertifikat_pdf, keterangan, created_at,
-  pemohon ( id_pemohon, nama_pemohon, alamat ),
-  jenis:jenis_hki ( id_jenis_hki, nama_jenis_hki ), 
-  status_hki ( id_status, nama_status ),
-  pengusul ( id_pengusul, nama_opd ),
-  kelas:kelas_hki ( id_kelas, nama_kelas, tipe )
-`
+// --- SKEMA VALIDASI ---
+const idSchema = z.coerce.number().int().positive('ID tidak valid.')
+
+const hkiUpdateSchema = z.object({
+  nama_hki: z.string().min(3, 'Nama HKI minimal 3 karakter.'),
+  nama_pemohon: z.string().min(3, 'Nama pemohon minimal 3 karakter.'),
+  alamat: z.string().optional().nullable(),
+  jenis_produk: z.string().optional().nullable(),
+  tahun_fasilitasi: z.coerce.number().int(),
+  keterangan: z.string().optional().nullable(),
+  id_jenis_hki: z.coerce.number(),
+  id_status: z.coerce.number(),
+  id_pengusul: z.coerce.number(),
+  id_kelas: z.coerce.number().optional().nullable(),
+})
+
+// --- HELPER TERPUSAT ---
+function apiError(message: string, status: number, errors?: object) {
+  return NextResponse.json({ message, errors }, { status })
+}
+
+class AuthError extends Error {
+  constructor(message = 'Akses ditolak.') {
+    super(message)
+    this.name = 'AuthError'
+  }
+}
+
+async function authorizeAdmin(supabase: SupabaseClient<Database>) {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new AuthError('Anda tidak terautentikasi.')
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+
+  if (!profile || profile.role !== 'admin') {
+    throw new AuthError('Hanya admin yang dapat melakukan aksi ini.')
+  }
+  return user
+}
+
+
+// --- API HANDLERS ---
 
 export async function GET(
   request: NextRequest,
@@ -26,45 +66,31 @@ export async function GET(
 ) {
   const cookieStore = cookies()
   const supabase = createClient(cookieStore)
-  const hkiId = Number(params.id) // <-- PERBAIKAN DI SINI
 
   try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json(
-        { success: false, message: 'Tidak terautentikasi' },
-        { status: 401 }
-      )
-    }
+    const hkiId = idSchema.parse(params.id)
+    await authorizeAdmin(supabase)
 
     const { data, error } = await supabase
       .from(HKI_TABLE)
-      .select(ALIASED_SELECT_QUERY)
-      .eq('id_hki', hkiId) // <-- Sekarang hkiId adalah number
+      .select(`*, pemohon(*), jenis:jenis_hki(*), status_hki(*), pengusul(*), kelas:kelas_hki(*)`)
+      .eq('id_hki', hkiId)
       .single()
 
     if (error) {
       if (error.code === 'PGRST116') {
-        return NextResponse.json(
-          { success: false, message: 'Data HKI tidak ditemukan' },
-          { status: 404 }
-        )
+        return apiError(`Data HKI dengan ID ${hkiId} tidak ditemukan.`, 404)
       }
       throw error
     }
 
-    return NextResponse.json({ success: true, data }, { status: 200 })
+    return NextResponse.json({ success: true, data })
   } catch (err: any) {
-    console.error(`[API GET HKI Error]: ${err.message}`)
-    return NextResponse.json(
-      {
-        success: false,
-        message: 'Terjadi kesalahan pada server saat mengambil data.',
-      },
-      { status: 500 }
-    )
+    if (err instanceof z.ZodError) return apiError('Input tidak valid.', 400, err.flatten().fieldErrors)
+    if (err instanceof AuthError) return apiError(err.message, 403)
+    
+    console.error('[API GET HKI by ID Error]:', err)
+    return apiError(`Terjadi kesalahan pada server: ${err.message}`, 500)
   }
 }
 
@@ -74,133 +100,94 @@ export async function PATCH(
 ) {
   const cookieStore = cookies()
   const supabase = createClient(cookieStore)
-  const hkiId = Number(params.id) // <-- PERBAIKAN DI SINI
 
   try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json(
-        { success: false, message: 'Tidak terautentikasi' },
-        { status: 401 }
-      )
-    }
+    const hkiId = idSchema.parse(params.id)
+    const user = await authorizeAdmin(supabase)
 
     const formData = await request.formData()
-    const getVal = (key: string) => formData.get(key)
-    const shouldDeleteFile = getVal('delete_sertifikat') === 'true'
+    const rawData = Object.fromEntries(formData.entries())
+    
+    const { nama_pemohon, alamat, ...hkiFields } = hkiUpdateSchema.parse(rawData)
 
-    const { data: currentHki, error: findHkiError } = await supabase
+    const { data: currentHki, error: findError } = await supabase
       .from(HKI_TABLE)
-      .select('id_pemohon, sertifikat_pdf')
-      .eq('id_hki', hkiId) // <-- Sekarang hkiId adalah number
+      .select('sertifikat_pdf')
+      .eq('id_hki', hkiId)
       .single()
 
-    if (findHkiError || !currentHki) {
-      return NextResponse.json(
-        { success: false, message: `HKI dengan ID ${hkiId} tidak ditemukan.` },
-        { status: 404 }
-      )
-    }
+    if (findError) return apiError(`HKI dengan ID ${hkiId} tidak ditemukan.`, 404)
 
-    const namaPemohon = (getVal('nama_pemohon') as string | null)?.trim()
-    if (!namaPemohon) {
-      return NextResponse.json(
-        { success: false, message: 'Nama pemohon wajib diisi.' },
-        { status: 400 }
-      )
-    }
-    const alamatPemohon = getVal('alamat') as string | null
-
-    const { error: pemohonUpdateError } = await supabase
-      .from(PEMOHON_TABLE)
-      .update({ nama_pemohon: namaPemohon, alamat: alamatPemohon })
-      .eq('id_pemohon', currentHki.id_pemohon)
-
-    if (pemohonUpdateError) {
-      if (pemohonUpdateError.code === '23505') {
-        throw new Error(
-          `Nama pemohon "${namaPemohon}" sudah digunakan oleh entri lain.`
-        )
-      }
-      throw new Error(
-        `Gagal memperbarui data pemohon: ${pemohonUpdateError.message}`
-      )
-    }
-
-    const idKelas = getVal('id_kelas')
-    const hkiUpdateData: Partial<
-      Database['public']['Tables']['hki']['Update']
-    > = {
-      nama_hki: String(getVal('nama_hki') || '').trim(),
-      jenis_produk: (getVal('jenis_produk') as string | null) || null,
-      tahun_fasilitasi: Number(getVal('tahun_fasilitasi')),
-      keterangan: (getVal('keterangan') as string | null) || null,
-      id_jenis_hki: Number(getVal('id_jenis_hki')),
-      id_status: Number(getVal('id_status')),
-      id_pengusul: Number(getVal('id_pengusul')),
-      id_pemohon: currentHki.id_pemohon,
-      id_kelas: idKelas ? Number(idKelas) : null,
-      updated_at: new Date().toISOString(),
-    }
+    let newFilePath: string | null = null
+    let finalFilePath = currentHki.sertifikat_pdf
+    const oldFilePath = currentHki.sertifikat_pdf
 
     const file = formData.get('file') as File | null
-    const oldFilePath = currentHki.sertifikat_pdf
+    const shouldDeleteFile = formData.get('delete_sertifikat') === 'true'
 
     if (file && file.size > 0) {
       const fileExt = file.name.split('.').pop() || 'pdf'
-      const newFilePath = `public/${user.id}-${uuidv4()}.${fileExt}`
-      const { error: uploadError } = await supabase.storage
-        .from(HKI_BUCKET)
-        .upload(newFilePath, file)
-      if (uploadError)
-        throw new Error(`Upload file baru gagal: ${uploadError.message}`)
-      hkiUpdateData.sertifikat_pdf = newFilePath
-      if (oldFilePath) {
-        await supabase.storage.from(HKI_BUCKET).remove([oldFilePath])
-      }
+      newFilePath = `public/${user.id}-${uuidv4()}.${fileExt}`
+      const { error: uploadError } = await supabase.storage.from(HKI_BUCKET).upload(newFilePath, file)
+      if (uploadError) throw new Error(`Upload file gagal: ${uploadError.message}`)
+      finalFilePath = newFilePath
     } else if (shouldDeleteFile && oldFilePath) {
-      const { error: removeError } = await supabase.storage
-        .from(HKI_BUCKET)
-        .remove([oldFilePath])
-      if (removeError)
-        throw new Error(`Gagal hapus file lama: ${removeError.message}`)
-      hkiUpdateData.sertifikat_pdf = null
+      finalFilePath = null
     }
 
+    // ✅ PERBAIKAN UTAMA: HAPUS RPC, GUNAKAN TRANSAKSI MANUAL
+    
+    // 1. Upsert data pemohon untuk mendapatkan ID-nya
+    const { data: pemohonData, error: pemohonError } = await supabase
+      .from(PEMOHON_TABLE)
+      .upsert({ nama_pemohon, alamat }, { onConflict: 'nama_pemohon', ignoreDuplicates: false })
+      .select('id_pemohon')
+      .single()
+      
+    if (pemohonError) throw new Error(`Gagal memproses data pemohon: ${pemohonError.message}`)
+    if (!pemohonData) throw new Error('Tidak dapat menemukan atau membuat data pemohon.')
+
+    // 2. Siapkan data HKI untuk diupdate
+    const hkiUpdatePayload = {
+      ...hkiFields,
+      id_pemohon: pemohonData.id_pemohon,
+      sertifikat_pdf: finalFilePath,
+    }
+
+    // 3. Update data HKI
     const { error: hkiUpdateError } = await supabase
       .from(HKI_TABLE)
-      .update(hkiUpdateData)
-      .eq('id_hki', hkiId) // <-- Sekarang hkiId adalah number
+      .update(hkiUpdatePayload)
+      .eq('id_hki', hkiId)
 
     if (hkiUpdateError) {
-      if (hkiUpdateError.code === '23505') {
-        throw new Error(`Nama HKI "${hkiUpdateData.nama_hki}" sudah ada.`)
-      }
+      // Rollback manual jika update HKI gagal: hapus file yang baru diupload
+      if (newFilePath) await supabase.storage.from(HKI_BUCKET).remove([newFilePath])
       throw new Error(`Gagal memperbarui data HKI: ${hkiUpdateError.message}`)
     }
 
-    const { data: updatedHki, error: finalFetchError } = await supabase
-      .from(HKI_TABLE)
-      .select(ALIASED_SELECT_QUERY)
-      .eq('id_hki', hkiId) // <-- Sekarang hkiId adalah number
-      .single()
-
-    if (finalFetchError) {
-      throw new Error('Gagal mengambil data terbaru setelah update.')
+    // 4. Hapus file lama jika transaksi berhasil dan ada file baru/dihapus
+    if (oldFilePath && oldFilePath !== finalFilePath) {
+      const { error: removeError } = await supabase.storage.from(HKI_BUCKET).remove([oldFilePath])
+      if (removeError) console.error(`Gagal menghapus file lama (${oldFilePath}):`, removeError.message)
     }
 
-    return NextResponse.json(
-      { success: true, data: updatedHki },
-      { status: 200 }
-    )
+    // 5. Ambil data final yang sudah diperbarui untuk dikirim kembali ke client
+    const { data: finalData, error: finalFetchError } = await supabase
+      .from(HKI_TABLE)
+      .select(`*, pemohon(*), jenis:jenis_hki(*), status_hki(*), pengusul(*), kelas:kelas_hki(*)`)
+      .eq('id_hki', hkiId)
+      .single()
+
+    if (finalFetchError) throw new Error('Gagal mengambil data yang baru diperbarui.')
+
+    return NextResponse.json({ success: true, data: finalData })
   } catch (err: any) {
-    console.error(`[API PATCH HKI Error]: ${err.message}`)
-    return NextResponse.json(
-      { success: false, message: `Terjadi kesalahan: ${err.message}` },
-      { status: 500 }
-    )
+    if (err instanceof z.ZodError) return apiError('Data tidak valid.', 400, err.flatten().fieldErrors)
+    if (err instanceof AuthError) return apiError(err.message, 403)
+
+    console.error(`[API PATCH HKI Final Error]: ${err.message}`)
+    return apiError(`Terjadi kesalahan: ${err.message}`, 500)
   }
 }
 
@@ -210,62 +197,34 @@ export async function DELETE(
 ) {
   const cookieStore = cookies()
   const supabase = createClient(cookieStore)
-  const hkiId = Number(params.id) // <-- PERBAIKAN DI SINI
 
   try {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json(
-        { success: false, message: 'Tidak terautentikasi' },
-        { status: 401 }
-      )
-    }
+    const hkiId = idSchema.parse(params.id)
+    await authorizeAdmin(supabase)
 
     const { data: hkiData, error: findError } = await supabase
       .from(HKI_TABLE)
       .select('sertifikat_pdf')
-      .eq('id_hki', hkiId) // <-- Sekarang hkiId adalah number
+      .eq('id_hki', hkiId)
       .single()
 
-    if (findError || !hkiData) {
-      return NextResponse.json(
-        { success: false, message: 'Data HKI tidak ditemukan untuk dihapus' },
-        { status: 404 }
-      )
-    }
-
-    const { error: deleteError } = await supabase
-      .from(HKI_TABLE)
-      .delete()
-      .eq('id_hki', hkiId) // <-- Sekarang hkiId adalah number
-
-    if (deleteError) {
-      throw new Error(`Gagal menghapus data HKI: ${deleteError.message}`)
-    }
+    if (findError) return apiError(`Data HKI dengan ID ${hkiId} tidak ditemukan.`, 404)
 
     if (hkiData.sertifikat_pdf) {
-      const { error: storageError } = await supabase.storage
-        .from(HKI_BUCKET)
-        .remove([hkiData.sertifikat_pdf])
-      if (storageError) {
-        console.warn(`Gagal menghapus file di storage: ${storageError.message}`)
-      }
+      const { error: storageError } = await supabase.storage.from(HKI_BUCKET).remove([hkiData.sertifikat_pdf])
+      if (storageError) throw new Error(`Gagal hapus file di storage: ${storageError.message}`)
     }
 
-    return NextResponse.json(
-      { success: true, message: 'Data HKI berhasil dihapus' },
-      { status: 200 }
-    )
+    const { error: deleteError } = await supabase.from(HKI_TABLE).delete().eq('id_hki', hkiId)
+    if (deleteError) throw new Error(`Gagal menghapus data HKI: ${deleteError.message}`)
+
+    return NextResponse.json({ success: true, message: 'Data HKI berhasil dihapus.' })
   } catch (err: any) {
+    if (err instanceof z.ZodError) return apiError('Input tidak valid.', 400, err.flatten().fieldErrors)
+    if (err instanceof AuthError) return apiError(err.message, 403)
+
     console.error(`[API DELETE HKI Error]: ${err.message}`)
-    return NextResponse.json(
-      {
-        success: false,
-        message: 'Terjadi kesalahan pada server saat menghapus data.',
-      },
-      { status: 500 }
-    )
+    return apiError(`Terjadi kesalahan pada server: ${err.message}`, 500)
   }
 }
+

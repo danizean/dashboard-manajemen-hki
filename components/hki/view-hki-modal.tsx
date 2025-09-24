@@ -15,7 +15,6 @@ import { HKIEntry } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { Download, Eye, Paperclip } from 'lucide-react'
 import { toast } from 'sonner'
-// ✅ PERBAIKAN: Impor dari file utilitas baru untuk memutus circular dependency
 import { getStatusStyle } from './hki-utils'
 
 const DetailItem = memo(

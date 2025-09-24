@@ -1,16 +1,19 @@
 'use client'
 
-import React, { useMemo } from 'react'
+import React, { useMemo, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { DataTable } from '@/components/hki/data-table'
-import { EditHKIModal } from '@/components/hki/edit-hki-modal'
-import { CreateHKIModal } from '@/components/hki/create-hki-modal'
-import { ViewHKIModal } from '@/components/hki/view-hki-modal'
 import { HKIEntry, FormOptions } from '@/lib/types'
 import { toast } from 'sonner'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+
+const EditHKIModal = dynamic(() => import('@/components/hki/edit-hki-modal').then(mod => mod.EditHKIModal));
+const CreateHKIModal = dynamic(() => import('@/components/hki/create-hki-modal').then(mod => mod.CreateHKIModal));
+const ViewHKIModal = dynamic(() => import('@/components/hki/view-hki-modal').then(mod => mod.ViewHKIModal));
+
 
 interface HKIClientPageProps {
   formOptions: Readonly<FormOptions>
@@ -48,7 +51,6 @@ const PageHeader = ({ totalCount, pageSize, pageIndex }: { totalCount: number; p
   
   return (
     <div>
-      {/* ✅ NAVIGASI BREADCRUMB DIHAPUS DARI SINI */}
       <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Manajemen Data Pengajuan Fasilitasi HKI</h1>
       {totalCount > 0 && 
         <p className="mt-2 text-muted-foreground">
@@ -62,15 +64,61 @@ const PageHeader = ({ totalCount, pageSize, pageIndex }: { totalCount: number; p
 export function HKIClientPage({ formOptions, error: serverError }: HKIClientPageProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const queryClient = useQueryClient()
+  
+  const queryKey = useMemo(() => ['hkiData', searchParams.toString()], [searchParams]);
 
   const { data, error, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['hkiData', searchParams.toString()],
+    queryKey,
     queryFn: () => fetchHkiData(new URLSearchParams(searchParams.toString())),
     placeholderData: (previousData) => previousData,
     retry: 1,
   });
 
   const { data: hkiData = [], totalCount = 0 } = data || {};
+  
+  const { mutate: updateStatus } = useMutation({
+    mutationFn: async ({ entryId, newStatusId }: { entryId: number, newStatusId: number }) => {
+      const response = await fetch(`/api/hki/${entryId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ statusId: newStatusId }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Gagal memperbarui status.' }));
+        throw new Error(errorData.message || 'Gagal memperbarui status.');
+      }
+      return response.json();
+    },
+    onMutate: async ({ entryId, newStatusId }) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previousData = queryClient.getQueryData(queryKey);
+
+      queryClient.setQueryData(queryKey, (oldData: any) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          data: oldData.data.map((entry: HKIEntry) => 
+            entry.id_hki === entryId
+              ? { ...entry, status_hki: formOptions.statusOptions.find(s => s.id_status === newStatusId) || entry.status_hki }
+              : entry
+          ),
+        };
+      });
+
+      return { previousData };
+    },
+    onError: (err: Error, variables, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(queryKey, context.previousData);
+      }
+      toast.error(`Gagal memperbarui status: ${err.message}`);
+    },
+    onSuccess: (data) => {
+      toast.success(data.message || "Status berhasil diperbarui!");
+      queryClient.invalidateQueries({ queryKey });
+    },
+  });
 
   const isCreateModalOpen = searchParams.get('create') === 'true'
   const editingHkiId = useMemo(() => Number(searchParams.get('edit')) || null, [searchParams])
@@ -86,11 +134,8 @@ export function HKIClientPage({ formOptions, error: serverError }: HKIClientPage
     return hkiData.find((item: HKIEntry) => item.id_hki === viewingEntryId) || null;
   }, [viewingEntryId, hkiData])
 
-  const isFiltered = useMemo(() => {
-      const relevantFilters = ['search', 'jenisId', 'statusId', 'year', 'pengusulId'];
-      return relevantFilters.some(key => searchParams.has(key) && searchParams.get(key) !== '');
-  }, [searchParams]);
-
+  // ❌ Logika `isFiltered` dihapus dari sini karena sudah ditangani oleh DataTable
+  
   const updateQueryString = (newParams: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(newParams).forEach(([key, value]) => {
@@ -107,7 +152,7 @@ export function HKIClientPage({ formOptions, error: serverError }: HKIClientPage
   const onMutationSuccess = (message: string) => {
     handleCloseModals();
     toast.success(message);
-    refetch();
+    queryClient.invalidateQueries({ queryKey });
   }
 
   const handleError = (message = 'Terjadi kesalahan') => toast.error(message)
@@ -118,6 +163,12 @@ export function HKIClientPage({ formOptions, error: serverError }: HKIClientPage
 
   return (
     <div className="space-y-6">
+      {isFetching && !isLoading && (
+        <div className="fixed top-0 left-0 right-0 h-1 z-50">
+          <div className="h-full bg-primary/50 animate-pulse w-full" />
+        </div>
+      )}
+
       <PageHeader totalCount={totalCount} pageSize={pagination.pageSize} pageIndex={pagination.pageIndex} />
 
       <DataTable
@@ -127,13 +178,16 @@ export function HKIClientPage({ formOptions, error: serverError }: HKIClientPage
         onEdit={handleEdit}
         onOpenCreateModal={handleOpenCreateModal}
         onViewDetails={handleViewDetails}
-        isLoading={isLoading || isFetching}
-        isFiltered={isFiltered}
+        onStatusUpdate={(entryId, newStatusId) => updateStatus({ entryId, newStatusId })}
+        isLoading={isLoading}
+        // ❌ Prop `isFiltered` dihapus dari sini
       />
 
-      <EditHKIModal key={`edit-${editingHkiId}`} isOpen={!!editingHkiId} hkiId={editingHkiId} onClose={handleCloseModals} onSuccess={(item) => onMutationSuccess(`Data "${item.nama_hki}" berhasil diperbarui.`)} onError={handleError} formOptions={formOptions} />
-      <CreateHKIModal isOpen={isCreateModalOpen} onClose={handleCloseModals} onSuccess={(item) => onMutationSuccess(`Data "${item.nama_hki}" berhasil dibuat.`)} onError={handleError} formOptions={formOptions} />
-      <ViewHKIModal isOpen={!!viewingEntry} onClose={handleCloseModals} entry={viewingEntry} />
+      <Suspense fallback={null}>
+        {editingHkiId && <EditHKIModal key={`edit-${editingHkiId}`} isOpen={!!editingHkiId} hkiId={editingHkiId} onClose={handleCloseModals} onSuccess={(item) => onMutationSuccess(`Data "${item.nama_hki}" berhasil diperbarui.`)} onError={handleError} formOptions={formOptions} />}
+        {isCreateModalOpen && <CreateHKIModal isOpen={isCreateModalOpen} onClose={handleCloseModals} onSuccess={(item) => onMutationSuccess(`Data "${item.nama_hki}" berhasil dibuat.`)} onError={handleError} formOptions={formOptions} />}
+        {viewingEntry && <ViewHKIModal isOpen={!!viewingEntry} onClose={handleCloseModals} entry={viewingEntry} />}
+      </Suspense>
     </div>
   )
 }
