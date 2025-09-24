@@ -161,15 +161,13 @@ function useDataTable(totalCount: number) {
     selectedRows,
     totalPages,
     setPagination,
-    setSelectedRows: useCallback(setSelectedRows, []),
+    setSelectedRows,
     handleSort,
     handleFilterChange,
     clearFilters,
   }
 }
 type UseDataTableReturn = ReturnType<typeof useDataTable>
-
-// === SUB-KOMPONEN (TEROPTIMALKAN DENGAN MEMO) ===
 
 const FilterTrigger = memo(({ icon: Icon, label, placeholder }: { icon: LucideIcon; label?: string; placeholder: string }) => (
     <div className="flex items-center gap-2 text-sm font-normal">
@@ -345,8 +343,6 @@ const DataTableRow = memo(({ entry, index, pagination, isSelected, onSelectRow, 
       })
   }, [entry.id_hki, entry.sertifikat_pdf])
 
-  // ✅ PERBAIKAN: Handler ini sekarang hanya memanggil fungsi dari parent.
-  // `useTransition` digunakan untuk menjaga UI tetap responsif selama proses update.
   const handleSelectStatus = useCallback((newStatusId: string) => {
     const numericId = Number(newStatusId)
     if (numericId !== entry.status_hki?.id_status) {
@@ -542,7 +538,7 @@ const InteractiveExportModal = memo(({ isOpen, onClose, filters, formOptions }: 
 InteractiveExportModal.displayName = 'InteractiveExportModal'
 
 
-// === KOMPONEN UTAMA ===
+// ✅ PERBAIKAN: Tipe untuk props didefinisikan sebelum komponen
 type DataTableProps = {
   data: HKIEntry[]
   totalCount: number
@@ -551,7 +547,9 @@ type DataTableProps = {
   onOpenCreateModal: () => void
   onViewDetails: (entry: HKIEntry) => void
   onStatusUpdate: (entryId: number, newStatusId: number) => void
-  isLoading?: boolean
+  onDelete: (ids: number[]) => void
+  isDeleting: boolean
+  isLoading: boolean
 }
 
 export function DataTable({
@@ -562,12 +560,12 @@ export function DataTable({
   onOpenCreateModal,
   onViewDetails,
   onStatusUpdate,
-  isLoading = false,
+  onDelete,
+  isDeleting,
+  isLoading,
 }: DataTableProps) {
-  const router = useRouter()
   const tableState = useDataTable(totalCount)
   const [deleteAlert, setDeleteAlert] = useState<{ open: boolean; entry?: HKIEntry; isBulk: boolean }>({ open: false, isBulk: false })
-  const [isDeleting, setIsDeleting] = useState(false)
   const [isExportModalOpen, setIsExportModalOpen] = useState(false)
   const [selectionModeActive, setSelectionModeActive] = useState(false)
 
@@ -576,7 +574,6 @@ export function DataTable({
     return Boolean(search || jenisId || statusId || year || pengusulId);
   }, [tableState.filters]);
 
-
   const toggleSelectionMode = useCallback(() => {
     setSelectionModeActive((prev) => {
       if (prev) tableState.setSelectedRows(new Set())
@@ -584,40 +581,24 @@ export function DataTable({
     })
   }, [tableState])
 
-  const handleDelete = useCallback(async () => {
-    setIsDeleting(true)
-    const itemsToDelete = deleteAlert.isBulk ? Array.from(tableState.selectedRows) : deleteAlert.entry ? [deleteAlert.entry.id_hki] : []
-    if (itemsToDelete.length === 0) {
-      setIsDeleting(false)
-      return
+  const handleDelete = useCallback(() => {
+    const itemsToDelete = deleteAlert.isBulk
+      ? Array.from(tableState.selectedRows)
+      : deleteAlert.entry
+      ? [deleteAlert.entry.id_hki]
+      : []
+      
+    if (itemsToDelete.length > 0) {
+      onDelete(itemsToDelete)
     }
-
-    const promise = fetch(`/api/hki/bulk-delete`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: itemsToDelete }),
-    }).then(async (res) => {
-      if (!res.ok) {
-        const errorData = await res.json()
-        throw new Error(errorData.error || `Gagal menghapus (status: ${res.status}).`)
-      }
-      return res.json()
-    })
-
-    toast.promise(promise, {
-      loading: `Menghapus ${itemsToDelete.length} entri...`,
-      success: () => {
-        setDeleteAlert({ open: false, isBulk: false })
-        tableState.setSelectedRows(new Set())
-        if (deleteAlert.isBulk) setSelectionModeActive(false)
-        router.refresh()
-        return 'Entri berhasil dihapus.'
-      },
-      error: (err) => err.message,
-    })
-
-    setIsDeleting(false)
-  }, [deleteAlert, router, tableState])
+    
+    setDeleteAlert({ open: false, isBulk: false })
+    
+    if (deleteAlert.isBulk) {
+      tableState.setSelectedRows(new Set())
+      setSelectionModeActive(false)
+    }
+  }, [deleteAlert, tableState, onDelete])
 
   const handleDeleteSingle = useCallback((entry: HKIEntry) => setDeleteAlert({ open: true, entry, isBulk: false }), [])
 
@@ -628,10 +609,6 @@ export function DataTable({
     }
     setDeleteAlert({ open: true, isBulk: true })
   }, [tableState.selectedRows])
-
-  // ❌ FUNGSI LOKAL DIHAPUS: Semua logika fetch dan toast untuk update status telah dihapus dari sini.
-  // Logika ini sekarang sepenuhnya ditangani oleh komponen induk (`HKIClientPage`) untuk
-  // memungkinkan optimistic updates dan mencegah error `re is not defined`.
 
   const showCheckboxColumn = selectionModeActive
   const columnsCount = 9 + (showCheckboxColumn ? 1 : 0)
@@ -648,7 +625,7 @@ export function DataTable({
         onOpenExportModal={() => setIsExportModalOpen(true)}
       />
       <div className="rounded-lg border dark:border-slate-800 bg-white dark:bg-slate-950">
-        <div className="overflow-x-auto horizontal-scroll-indicator">
+        <div className="overflow-x-auto">
           <Table>
             <TableHeader className="bg-slate-50 dark:bg-slate-900/50 hidden md:table-header-group">
               <TableRow className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
@@ -658,7 +635,8 @@ export function DataTable({
                       checked={!isLoading && data.length > 0 && tableState.selectedRows.size === data.length}
                       onCheckedChange={(checked) => {
                         const newRows = new Set<number>()
-                        if (checked) { data.forEach((row) => newRows.add(row.id_hki)) }
+                        // ✅ PERBAIKAN: Memberi tipe pada parameter `row`
+                        if (checked) { data.forEach((row: HKIEntry) => newRows.add(row.id_hki)) }
                         tableState.setSelectedRows(newRows)
                       }}
                       aria-label="Pilih semua baris"
@@ -686,7 +664,8 @@ export function DataTable({
                   </TableRow>
                 ))
               ) : data.length > 0 ? (
-                data.map((entry, index) => (
+                // ✅ PERBAIKAN: Memberi tipe pada parameter `entry` dan `index`
+                data.map((entry: HKIEntry, index: number) => (
                   <DataTableRow
                     key={entry.id_hki}
                     entry={entry}
@@ -702,7 +681,6 @@ export function DataTable({
                     onDelete={handleDeleteSingle}
                     onViewDetails={onViewDetails}
                     statusOptions={formOptions.statusOptions}
-                    // ✅ PERBAIKAN: Fungsi `onStatusUpdate` dari parent kini disalurkan langsung ke row
                     onStatusUpdate={onStatusUpdate}
                     showCheckboxColumn={showCheckboxColumn}
                   />
@@ -737,7 +715,8 @@ export function DataTable({
       </div>
       <AlertDialog open={deleteAlert.open} onOpenChange={(isOpen) => !isOpen && !isDeleting && setDeleteAlert({ open: false, isBulk: false })}>
         <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>Konfirmasi Penghapusan</AlertDialogTitle>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Konfirmasi Penghapusan</AlertDialogTitle>
             <AlertDialogDescription>
               {deleteAlert.isBulk ? `Anda yakin ingin menghapus ${tableState.selectedRows.size} entri yang dipilih?` : `Anda yakin ingin menghapus "${deleteAlert.entry?.nama_hki}"?`}<br />Tindakan ini tidak dapat diurungkan.
             </AlertDialogDescription>

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useMemo, Suspense } from 'react'
+import React, { useMemo, Suspense, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { DataTable } from '@/components/hki/data-table'
@@ -8,7 +8,8 @@ import { HKIEntry, FormOptions } from '@/lib/types'
 import { toast } from 'sonner'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, QueryKey } from '@tanstack/react-query'
+import { useHkiRealtime } from '@/hooks/useHkiRealtime'
 
 const EditHKIModal = dynamic(() => import('@/components/hki/edit-hki-modal').then(mod => mod.EditHKIModal));
 const CreateHKIModal = dynamic(() => import('@/components/hki/create-hki-modal').then(mod => mod.CreateHKIModal));
@@ -20,21 +21,19 @@ interface HKIClientPageProps {
   error: string | null
 }
 
-const fetchHkiData = async (searchParams: URLSearchParams) => {
+type HkiQueryData = { data: HKIEntry[]; totalCount: number };
+
+const fetchHkiData = async (searchParams: URLSearchParams): Promise<HkiQueryData> => {
   const response = await fetch(`/api/hki?${searchParams.toString()}`)
   if (!response.ok) {
-    try {
-      const errorData = await response.json()
-      throw new Error(errorData.message || 'Gagal mengambil data HKI')
-    } catch (e) {
-      throw new Error(`Terjadi kesalahan jaringan atau server. Status: ${response.status}`)
-    }
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.message || 'Gagal mengambil data HKI')
   }
   return response.json()
 }
 
 const ServerErrorDisplay = ({ errorMessage, onRetry }: { errorMessage: string; onRetry: () => void }) => (
-  <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-destructive bg-red-50 p-12 text-center dark:bg-red-950/30">
+ <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-destructive bg-red-50 p-12 text-center dark:bg-red-950/30">
     <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
       <AlertTriangle className="h-8 w-8 text-destructive" />
     </div>
@@ -61,14 +60,17 @@ const PageHeader = ({ totalCount, pageSize, pageIndex }: { totalCount: number; p
   )
 }
 
+
 export function HKIClientPage({ formOptions, error: serverError }: HKIClientPageProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   
+  useHkiRealtime();
+  
   const queryKey = useMemo(() => ['hkiData', searchParams.toString()], [searchParams]);
 
-  const { data, error, isLoading, isFetching, refetch } = useQuery({
+  const { data, error, isLoading, isFetching, refetch } = useQuery<HkiQueryData>({
     queryKey,
     queryFn: () => fetchHkiData(new URLSearchParams(searchParams.toString())),
     placeholderData: (previousData) => previousData,
@@ -77,6 +79,46 @@ export function HKIClientPage({ formOptions, error: serverError }: HKIClientPage
 
   const { data: hkiData = [], totalCount = 0 } = data || {};
   
+  const { mutate: deleteHkiEntries, isPending: isDeleting } = useMutation({
+    mutationFn: async (ids: number[]) => {
+      const response = await fetch('/api/hki/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Gagal menghapus entri.');
+      return result;
+    },
+    onMutate: async (idsToDelete: number[]) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previousData = queryClient.getQueryData<HkiQueryData>(queryKey);
+
+      queryClient.setQueryData<HkiQueryData>(queryKey, (oldData) => {
+        if (!oldData) return { data: [], totalCount: 0 };
+        const newData = oldData.data.filter(entry => !idsToDelete.includes(entry.id_hki));
+        return {
+          data: newData,
+          totalCount: oldData.totalCount - idsToDelete.length,
+        };
+      });
+
+      return { previousData };
+    },
+    onError: (err: Error, variables, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(queryKey, context.previousData);
+      }
+      toast.error(`Gagal menghapus: ${err.message}`);
+    },
+    onSuccess: (data) => {
+      toast.success(data.message || 'Entri berhasil dihapus!');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey });
+    },
+  });
+
   const { mutate: updateStatus } = useMutation({
     mutationFn: async ({ entryId, newStatusId }: { entryId: number, newStatusId: number }) => {
       const response = await fetch(`/api/hki/${entryId}/status`, {
@@ -92,13 +134,13 @@ export function HKIClientPage({ formOptions, error: serverError }: HKIClientPage
     },
     onMutate: async ({ entryId, newStatusId }) => {
       await queryClient.cancelQueries({ queryKey });
-      const previousData = queryClient.getQueryData(queryKey);
+      const previousData = queryClient.getQueryData<HkiQueryData>(queryKey);
 
-      queryClient.setQueryData(queryKey, (oldData: any) => {
-        if (!oldData) return oldData;
+      queryClient.setQueryData<HkiQueryData>(queryKey, (oldData) => {
+        if (!oldData) return { data: [], totalCount: 0 };
         return {
           ...oldData,
-          data: oldData.data.map((entry: HKIEntry) => 
+          data: oldData.data.map((entry) => 
             entry.id_hki === entryId
               ? { ...entry, status_hki: formOptions.statusOptions.find(s => s.id_status === newStatusId) || entry.status_hki }
               : entry
@@ -116,6 +158,8 @@ export function HKIClientPage({ formOptions, error: serverError }: HKIClientPage
     },
     onSuccess: (data) => {
       toast.success(data.message || "Status berhasil diperbarui!");
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey });
     },
   });
@@ -134,26 +178,45 @@ export function HKIClientPage({ formOptions, error: serverError }: HKIClientPage
     return hkiData.find((item: HKIEntry) => item.id_hki === viewingEntryId) || null;
   }, [viewingEntryId, hkiData])
 
-  // ❌ Logika `isFiltered` dihapus dari sini karena sudah ditangani oleh DataTable
-  
-  const updateQueryString = (newParams: Record<string, string | null>) => {
+  const updateQueryString = useCallback((newParams: Record<string, string | null>) => {
     const params = new URLSearchParams(searchParams.toString());
     Object.entries(newParams).forEach(([key, value]) => {
       value === null ? params.delete(key) : params.set(key, value);
     });
     router.push(`?${params.toString()}`, { scroll: false });
-  };
+  }, [searchParams, router]);
 
   const handleOpenCreateModal = () => updateQueryString({ create: 'true', edit: null, view: null });
   const handleEdit = (id: number) => updateQueryString({ edit: String(id), create: null, view: null });
   const handleViewDetails = (entry: HKIEntry) => updateQueryString({ view: String(entry.id_hki), create: null, edit: null });
   const handleCloseModals = () => updateQueryString({ create: null, edit: null, view: null });
 
-  const onMutationSuccess = (message: string) => {
+  const onMutationSuccess = useCallback((message: string, newItem: HKIEntry, mode: 'create' | 'edit') => {
     handleCloseModals();
     toast.success(message);
+    
+    queryClient.setQueryData<HkiQueryData>(queryKey, (oldData) => {
+      if (!oldData) return { data: [newItem], totalCount: 1 };
+      
+      if (mode === 'create') {
+        return {
+          data: [newItem, ...oldData.data],
+          totalCount: oldData.totalCount + 1
+        };
+      }
+      if (mode === 'edit') {
+        return {
+          ...oldData,
+          data: oldData.data.map(item => item.id_hki === newItem.id_hki ? newItem : item)
+        };
+      }
+      return oldData;
+    });
+    
     queryClient.invalidateQueries({ queryKey });
-  }
+
+  }, [queryClient, queryKey, handleCloseModals]);
+
 
   const handleError = (message = 'Terjadi kesalahan') => toast.error(message)
   
@@ -178,16 +241,19 @@ export function HKIClientPage({ formOptions, error: serverError }: HKIClientPage
         onEdit={handleEdit}
         onOpenCreateModal={handleOpenCreateModal}
         onViewDetails={handleViewDetails}
-        onStatusUpdate={(entryId, newStatusId) => updateStatus({ entryId, newStatusId })}
+        // ✅ PERBAIKAN: Menambahkan tipe eksplisit pada parameter
+        onStatusUpdate={(entryId: number, newStatusId: number) => updateStatus({ entryId, newStatusId })}
+        onDelete={deleteHkiEntries}
+        isDeleting={isDeleting}
         isLoading={isLoading}
-        // ✅ Prop `isFiltered` dihapus dari sini
       />
 
       <Suspense fallback={null}>
-        {editingHkiId && <EditHKIModal key={`edit-${editingHkiId}`} isOpen={!!editingHkiId} hkiId={editingHkiId} onClose={handleCloseModals} onSuccess={(item) => onMutationSuccess(`Data "${item.nama_hki}" berhasil diperbarui.`)} onError={handleError} formOptions={formOptions} />}
-        {isCreateModalOpen && <CreateHKIModal isOpen={isCreateModalOpen} onClose={handleCloseModals} onSuccess={(item) => onMutationSuccess(`Data "${item.nama_hki}" berhasil dibuat.`)} onError={handleError} formOptions={formOptions} />}
+        {editingHkiId && <EditHKIModal key={`edit-${editingHkiId}`} isOpen={!!editingHkiId} hkiId={editingHkiId} onClose={handleCloseModals} onSuccess={(item) => onMutationSuccess(`Data "${item.nama_hki}" berhasil diperbarui.`, item, 'edit')} onError={handleError} formOptions={formOptions} />}
+        {isCreateModalOpen && <CreateHKIModal isOpen={isCreateModalOpen} onClose={handleCloseModals} onSuccess={(item) => onMutationSuccess(`Data "${item.nama_hki}" berhasil dibuat.`, item, 'create')} onError={handleError} formOptions={formOptions} />}
         {viewingEntry && <ViewHKIModal isOpen={!!viewingEntry} onClose={handleCloseModals} entry={viewingEntry} />}
       </Suspense>
     </div>
   )
 }
+

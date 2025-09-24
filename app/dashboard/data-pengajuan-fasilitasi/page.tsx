@@ -4,52 +4,65 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { HKIClientPage } from './hki-client-page'
 import { cookies } from 'next/headers'
 import { FormOptions } from '@/lib/types'
+import { Database } from '@/lib/database.types'
 
+// Revalidasi data setiap jam untuk menjaga kesegaran data master
 export const revalidate = 3600
-async function getFormOptions(supabase: SupabaseClient): Promise<FormOptions> {
-  const [jenisRes, statusRes, tahunRes, pengusulRes, kelasRes] =
-    await Promise.all([
-      supabase
-        .from('jenis_hki')
-        .select('id_jenis_hki, nama_jenis_hki')
-        .order('nama_jenis_hki'),
-      supabase
-        .from('status_hki')
-        .select('id_status, nama_status')
-        .order('id_status'),
-      supabase.rpc('get_distinct_hki_years'),
-      supabase
-        .from('pengusul')
-        .select('id_pengusul, nama_opd')
-        .order('nama_opd'),
-      supabase
-        .from('kelas_hki')
-        .select('id_kelas, nama_kelas, tipe')
-        .order('id_kelas'),
-    ])
 
-  if (jenisRes.error)
-    throw new Error(`Gagal memuat Jenis HKI: ${jenisRes.error.message}`)
-  if (statusRes.error)
-    throw new Error(`Gagal memuat Status HKI: ${statusRes.error.message}`)
-  if (tahunRes.error)
-    throw new Error(`Gagal memuat Tahun (RPC): ${tahunRes.error.message}`)
-  if (pengusulRes.error)
-    throw new Error(`Gagal memuat Pengusul: ${pengusulRes.error.message}`)
-  if (kelasRes.error)
-    throw new Error(`Gagal memuat Kelas HKI: ${kelasRes.error.message}`)
+async function getFormOptions(supabase: SupabaseClient<Database>): Promise<FormOptions> {
+  
+  // Menggunakan Promise.allSettled untuk ketahanan error.
+  const results = await Promise.allSettled([
+    supabase
+      .from('jenis_hki')
+      .select('id_jenis_hki, nama_jenis_hki')
+      .order('nama_jenis_hki'),
+    supabase
+      .from('status_hki')
+      .select('id_status, nama_status')
+      .order('id_status'),
+    supabase.rpc('get_distinct_hki_years'),
+    supabase
+      .from('pengusul')
+      .select('id_pengusul, nama_opd')
+      .order('nama_opd'),
+    supabase
+      .from('kelas_hki')
+      .select('id_kelas, nama_kelas, tipe')
+      .order('id_kelas'),
+  ])
+
+  // Helper untuk menangani hasil dari allSettled dan mencatat error
+  const getResultData = (result: PromiseSettledResult<any>, name: string) => {
+    if (result.status === 'fulfilled' && !result.value.error) {
+      return result.value.data ?? []
+    }
+    if (result.status === 'rejected' || result.value.error) {
+      console.error(
+        `Gagal memuat opsi untuk "${name}":`,
+        result.status === 'rejected' ? result.reason : result.value.error.message
+      )
+    }
+    return [] // Kembalikan array kosong jika gagal
+  }
+
+  const jenisOptions = getResultData(results[0], 'Jenis HKI')
+  const statusOptions = getResultData(results[1], 'Status HKI')
+  const tahunOptions = getResultData(results[2], 'Tahun HKI (RPC)')
+  const pengusulOptionsRaw = getResultData(results[3], 'Pengusul')
+  const kelasOptionsRaw = getResultData(results[4], 'Kelas HKI')
 
   return {
-    jenisOptions: jenisRes.data ?? [],
-    statusOptions: statusRes.data ?? [],
-    tahunOptions: tahunRes.data ?? [],
-    pengusulOptions: (pengusulRes.data || []).map(
+    jenisOptions,
+    statusOptions,
+    tahunOptions,
+    pengusulOptions: pengusulOptionsRaw.map(
       (p: { id_pengusul: number; nama_opd: string }) => ({
         value: String(p.id_pengusul),
         label: p.nama_opd,
       })
     ),
-    kelasOptions: (kelasRes.data || []).map(
+    kelasOptions: kelasOptionsRaw.map(
       (k: { id_kelas: number; nama_kelas: string; tipe: string }) => ({
         value: String(k.id_kelas),
         label: `${k.id_kelas} – ${k.nama_kelas} (${k.tipe})`,
