@@ -345,6 +345,8 @@ const DataTableRow = memo(({ entry, index, pagination, isSelected, onSelectRow, 
       })
   }, [entry.id_hki, entry.sertifikat_pdf])
 
+  // ✅ PERBAIKAN: Handler ini sekarang hanya memanggil fungsi dari parent.
+  // `useTransition` digunakan untuk menjaga UI tetap responsif selama proses update.
   const handleSelectStatus = useCallback((newStatusId: string) => {
     const numericId = Number(newStatusId)
     if (numericId !== entry.status_hki?.id_status) {
@@ -550,7 +552,6 @@ type DataTableProps = {
   onViewDetails: (entry: HKIEntry) => void
   onStatusUpdate: (entryId: number, newStatusId: number) => void
   isLoading?: boolean
-  // ❌ Prop 'isFiltered' tidak lagi diperlukan dari parent
 }
 
 export function DataTable({
@@ -570,7 +571,6 @@ export function DataTable({
   const [isExportModalOpen, setIsExportModalOpen] = useState(false)
   const [selectionModeActive, setSelectionModeActive] = useState(false)
 
-  // ✅ Logika `isFiltered` sekarang sepenuhnya dikelola di sini.
   const isFiltered = useMemo(() => {
     const { search, jenisId, statusId, year, pengusulId } = tableState.filters;
     return Boolean(search || jenisId || statusId || year || pengusulId);
@@ -628,7 +628,11 @@ export function DataTable({
     }
     setDeleteAlert({ open: true, isBulk: true })
   }, [tableState.selectedRows])
-  
+
+  // ❌ FUNGSI LOKAL DIHAPUS: Semua logika fetch dan toast untuk update status telah dihapus dari sini.
+  // Logika ini sekarang sepenuhnya ditangani oleh komponen induk (`HKIClientPage`) untuk
+  // memungkinkan optimistic updates dan mencegah error `re is not defined`.
+
   const showCheckboxColumn = selectionModeActive
   const columnsCount = 9 + (showCheckboxColumn ? 1 : 0)
 
@@ -698,6 +702,7 @@ export function DataTable({
                     onDelete={handleDeleteSingle}
                     onViewDetails={onViewDetails}
                     statusOptions={formOptions.statusOptions}
+                    // ✅ PERBAIKAN: Fungsi `onStatusUpdate` dari parent kini disalurkan langsung ke row
                     onStatusUpdate={onStatusUpdate}
                     showCheckboxColumn={showCheckboxColumn}
                   />

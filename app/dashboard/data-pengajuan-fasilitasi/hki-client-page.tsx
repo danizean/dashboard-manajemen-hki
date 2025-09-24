@@ -180,7 +180,7 @@ export function HKIClientPage({ formOptions, error: serverError }: HKIClientPage
         onViewDetails={handleViewDetails}
         onStatusUpdate={(entryId, newStatusId) => updateStatus({ entryId, newStatusId })}
         isLoading={isLoading}
-        // ❌ Prop `isFiltered` dihapus dari sini
+        // ✅ Prop `isFiltered` dihapus dari sini
       />
 
       <Suspense fallback={null}>
