@@ -1,4 +1,3 @@
-// components/hki/view-hki-modal.tsx
 'use client'
 
 import React, { useCallback, memo } from 'react'
@@ -15,8 +14,9 @@ import { Badge } from '@/components/ui/badge'
 import { HKIEntry } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { Download, Eye, Paperclip } from 'lucide-react'
-import { getStatusStyle } from './data-table'
 import { toast } from 'sonner'
+// ✅ PERBAIKAN: Impor dari file utilitas baru untuk memutus circular dependency
+import { getStatusStyle } from './hki-utils'
 
 const DetailItem = memo(
   ({
@@ -34,7 +34,7 @@ const DetailItem = memo(
       <div className="flex flex-col gap-1">
         <dt className="text-sm font-medium text-muted-foreground">{label}</dt>
         <dd className="text-base text-foreground break-words">
-          {children ? children : displayValue}
+          {children || displayValue}
         </dd>
       </div>
     )
@@ -48,7 +48,7 @@ interface ViewHKIModalProps {
   entry: HKIEntry | null
 }
 
-export function ViewHKIModal({ isOpen, onClose, entry }: ViewHKIModalProps) {
+export const ViewHKIModal = memo(({ isOpen, onClose, entry }: ViewHKIModalProps) => {
   const handleDownload = useCallback(() => {
     if (!entry || !entry.sertifikat_pdf) {
       toast.error('File tidak tersedia.')
@@ -62,8 +62,8 @@ export function ViewHKIModal({ isOpen, onClose, entry }: ViewHKIModalProps) {
           if (!res.ok) {
             const errorData = await res
               .json()
-              .catch(() => ({ error: 'Gagal mendapatkan URL unduhan.' }))
-            throw new Error(errorData.error)
+              .catch(() => ({ message: 'Gagal mendapatkan URL unduhan.' }))
+            throw new Error(errorData.message)
           }
           const data = await res.json()
           window.open(data.signedUrl, '_blank')
@@ -88,7 +88,6 @@ export function ViewHKIModal({ isOpen, onClose, entry }: ViewHKIModalProps) {
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-3xl p-0 flex flex-col max-h-[90vh]">
-        {/* HEADER MODAL */}
         <DialogHeader className="flex flex-row items-start gap-4 px-6 py-4 border-b">
           <div className="bg-primary/10 p-2.5 rounded-lg flex-shrink-0">
             <Eye className="h-6 w-6 text-primary" />
@@ -104,7 +103,6 @@ export function ViewHKIModal({ isOpen, onClose, entry }: ViewHKIModalProps) {
           </div>
         </DialogHeader>
 
-        {/* KONTEN UTAMA (SCROLLABLE) */}
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 p-6 overflow-y-auto">
           {/* Kolom Kiri - Info Utama */}
           <dl className="space-y-6">
@@ -188,7 +186,6 @@ export function ViewHKIModal({ isOpen, onClose, entry }: ViewHKIModalProps) {
           </dl>
         </div>
 
-        {/* FOOTER MODAL */}
         <DialogFooter className="px-6 py-4 border-t bg-muted/40 sm:justify-end">
           <Button variant="outline" onClick={onClose}>
             Tutup
@@ -197,4 +194,5 @@ export function ViewHKIModal({ isOpen, onClose, entry }: ViewHKIModalProps) {
       </DialogContent>
     </Dialog>
   )
-}
+})
+ViewHKIModal.displayName = 'ViewHKIModal'

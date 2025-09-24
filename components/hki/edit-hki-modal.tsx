@@ -1,6 +1,6 @@
-// components/hki/edit-hki-modal.tsx
 'use client'
 
+// ✅ OPTIMASI: Tambahkan `memo` untuk konsistensi
 import React, { useState, useCallback, memo } from 'react'
 import {
   Dialog,
@@ -30,8 +30,9 @@ interface EditHKIModalProps {
 }
 
 const EDIT_FORM_ID = 'hki-edit-form'
+
 const FormSkeleton = memo(() => (
-  <div className="space-y-6">
+  <div className="space-y-6 animate-pulse">
     {[...Array(3)].map((_, i) => (
       <div key={i} className="space-y-2">
         <Skeleton className="h-4 w-1/4" />
@@ -67,14 +68,15 @@ const ErrorDisplay = memo(
 )
 ErrorDisplay.displayName = 'ErrorDisplay'
 
-export function EditHKIModal({
+// ✅ OPTIMASI: Dibungkus dengan memo untuk mencegah re-render yang tidak perlu
+export const EditHKIModal = memo(({
   isOpen,
   onClose,
   onSuccess,
   onError,
   hkiId,
   formOptions,
-}: EditHKIModalProps) {
+}: EditHKIModalProps) => {
   const { data, isLoading, error, refetch } = useHKIEntry(hkiId, isOpen)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -138,7 +140,8 @@ export function EditHKIModal({
           {renderContent()}
         </div>
 
-        {!isLoading && !error && data && (
+        {/* Tampilkan footer hanya jika form berhasil dimuat */}
+        {data && !isLoading && !error && (
           <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 px-6 py-4 border-t bg-muted/40">
             <Button
               variant="outline"
@@ -161,4 +164,5 @@ export function EditHKIModal({
       </DialogContent>
     </Dialog>
   )
-}
+})
+EditHKIModal.displayName = 'EditHKIModal'

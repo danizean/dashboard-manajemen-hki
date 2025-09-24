@@ -3,6 +3,7 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Toaster } from '@/components/ui/sonner'
+import { Providers } from './providers' // <-- Impor provider
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -19,8 +20,10 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className + ' bg-background text-foreground'}>
-        {children}
-        <Toaster position="top-center" richColors closeButton theme="system" />
+        <Providers> {/* <-- Bungkus children */}
+          {children}
+          <Toaster position="top-center" richColors closeButton theme="system" />
+        </Providers>
       </body>
     </html>
   )

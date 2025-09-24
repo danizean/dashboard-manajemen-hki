@@ -3,14 +3,14 @@ import { createClient } from '@/utils/supabase/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { HKIClientPage } from './hki-client-page'
 import { cookies } from 'next/headers'
-import { HKIEntry, FormOptions } from '@/lib/types'
+import { FormOptions } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
-const getSearchParam = (param: string | string[] | undefined): string => {
-  return typeof param === 'string' ? param.trim() : ''
-}
-
+/**
+ * Fungsi ini tetap di sisi server untuk mengambil data
+ * yang jarang berubah (opsi filter) sekali saat halaman dimuat.
+ */
 async function getFormOptions(supabase: SupabaseClient): Promise<FormOptions> {
   const [jenisRes, statusRes, tahunRes, pengusulRes, kelasRes] =
     await Promise.all([
@@ -21,7 +21,7 @@ async function getFormOptions(supabase: SupabaseClient): Promise<FormOptions> {
       supabase.from('kelas_hki').select('id_kelas, nama_kelas, tipe').order('id_kelas'),
     ])
 
-  // Error handling
+  // Error handling untuk setiap query
   if (jenisRes.error) throw new Error(`Gagal memuat Jenis HKI: ${JSON.stringify(jenisRes.error)}`);
   if (statusRes.error) throw new Error(`Gagal memuat Status HKI: ${JSON.stringify(statusRes.error)}`);
   if (tahunRes.error) throw new Error(`Gagal memuat Tahun (RPC): ${JSON.stringify(tahunRes.error)}`);
@@ -37,79 +37,35 @@ async function getFormOptions(supabase: SupabaseClient): Promise<FormOptions> {
   }
 }
 
-export default async function HKIPage({
-  searchParams,
-}: {
-  readonly searchParams: { [key: string]: string | string[] | undefined }
-}) {
+/**
+ * HKIPage (Server Component) sekarang hanya bertanggung jawab untuk:
+ * 1. Mengambil data awal untuk filter (formOptions).
+ * 2. Merender HKIClientPage (Client Component) dan memberikan formOptions.
+ *
+ * Semua logika fetching data utama, pagination, dan filtering akan ditangani
+ * di HKIClientPage menggunakan TanStack Query yang memanggil API Route.
+ */
+export default async function HKIPage() {
   const cookieStore = cookies()
   const supabase = createClient(cookieStore)
 
   try {
-    const search = getSearchParam(searchParams.search)
-    const page = Math.max(1, parseInt(getSearchParam(searchParams.page) || '1', 10))
-    const pageSize = parseInt(getSearchParam(searchParams.pageSize) || '50', 10)
-    const jenisId = getSearchParam(searchParams.jenisId)
-    const statusId = getSearchParam(searchParams.statusId)
-    const year = getSearchParam(searchParams.year)
-    const pengusulId = getSearchParam(searchParams.pengusulId)
-
-    const allowedSortFields = ['created_at', 'nama_hki', 'tahun_fasilitasi']
-    const sortBy = allowedSortFields.includes(getSearchParam(searchParams.sortBy)) ? getSearchParam(searchParams.sortBy) : 'created_at'
-    const sortOrder = searchParams.sortOrder === 'asc'
-    const offset = (page - 1) * pageSize
-    const isAnyFilterActive = !!(search || jenisId || statusId || year || pengusulId)
-    let dataToRender: HKIEntry[] = []
-    let totalCount = 0
-
-    const querySelectString = `
-      id_hki, nama_hki, jenis_produk, tahun_fasilitasi, sertifikat_pdf, keterangan, created_at,
-      pemohon ( id_pemohon, nama_pemohon, alamat ),
-      jenis:jenis_hki ( id_jenis_hki, nama_jenis_hki ), 
-      status_hki ( id_status, nama_status ),
-      pengusul ( id_pengusul, nama_opd ),
-      kelas:kelas_hki ( id_kelas, nama_kelas, tipe )
-    `
-    
-    if (isAnyFilterActive) {
-      const { data: filterResult, error: rpcError } = await supabase.rpc(
-        'search_hki_ids_with_count',
-        {
-          p_search_text: search, p_jenis_id: jenisId ? Number(jenisId) : null,
-          p_status_id: statusId ? Number(statusId) : null, p_year: year ? Number(year) : null,
-          p_pengusul_id: pengusulId ? Number(pengusulId) : null,
-        } as any
-      )
-      if (rpcError) throw new Error(`Gagal mencari data (RPC): ${JSON.stringify(rpcError)}`)
-      
-      const filteredIds = filterResult?.map((r: { result_id: number }) => r.result_id) ?? []
-      totalCount = filterResult?.[0]?.result_count ?? 0
-
-      if (filteredIds.length > 0) {
-        const { data, error } = await supabase.from('hki').select(querySelectString).in('id_hki', filteredIds)
-          .order(sortBy, { ascending: sortOrder }).range(offset, offset + pageSize - 1)
-        if (error) throw new Error(`Gagal memuat data HKI terfilter: ${JSON.stringify(error)}`)
-        dataToRender = data as HKIEntry[]
-      }
-    } else {
-      const { data, count, error } = await supabase.from('hki').select(querySelectString, { count: 'exact' })
-        .order(sortBy, { ascending: sortOrder }).range(offset, offset + pageSize - 1)
-      if (error) throw new Error(`Gagal memuat data HKI: ${JSON.stringify(error)}`)
-      dataToRender = data as HKIEntry[]
-      totalCount = count ?? 0
-    }
-    
+    // Satu-satunya data yang diambil di server adalah opsi untuk form.
     const formOptions = await getFormOptions(supabase);
 
+    // Render komponen klien dan hanya teruskan formOptions.
+    // Tidak ada lagi initialData, totalCount, dll.
     return (
-      <HKIClientPage initialData={dataToRender} totalCount={totalCount} formOptions={formOptions} isFiltered={isAnyFilterActive} error={null} />
+      <HKIClientPage formOptions={formOptions} error={null} />
     )
   } catch (error) {
-    console.error('Terjadi kesalahan fatal pada halaman HKI:', error)
+    console.error('Gagal memuat prasyarat halaman HKI:', error)
+    // Jika pengambilan formOptions gagal, kirim state error ke klien.
     return (
-      <HKIClientPage initialData={[]} totalCount={0}
+      <HKIClientPage
         formOptions={{ jenisOptions: [], statusOptions: [], tahunOptions: [], pengusulOptions: [], kelasOptions: [] }}
-        isFiltered={false} error={ error instanceof Error ? error.message : 'Terjadi kesalahan tidak diketahui.' } />
+        error={ error instanceof Error ? error.message : 'Gagal memuat opsi filter.' }
+      />
     )
   }
 }
