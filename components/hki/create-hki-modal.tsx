@@ -1,7 +1,7 @@
-// app/components/hki/create-hki-modal.tsx
+// components/hki/create-hki-modal.tsx
 'use client'
 
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, memo } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -18,31 +18,35 @@ import { PlusSquare, Loader2 } from 'lucide-react'
 interface CreateHKIModalProps {
   isOpen: boolean
   onClose: () => void
-  onSuccess?: (newItem: HKIEntry) => void
-  onError?: (message: string) => void
+  onSuccess: (newItem: HKIEntry) => void
+  onError: (message: string) => void
   formOptions: Readonly<FormOptions>
 }
 
 const CREATE_FORM_ID = 'hki-create-form'
 
-export function CreateHKIModal({
+export const CreateHKIModal = memo(({
   isOpen,
   onClose,
   onSuccess,
   onError,
   formOptions,
-}: Readonly<CreateHKIModalProps>) {
+}: CreateHKIModalProps) => {
+  // State `isSubmitting` di-manage secara internal oleh HKIForm,
+  // kita hanya perlu satu state untuk mengontrol tombol.
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // handleSuccess sekarang lebih sederhana, hanya meneruskan data.
+  // Logika `onClose` akan dipanggil di dalam `onSuccess` dari parent component.
   const handleSuccess = useCallback(
     (newData: HKIEntry) => {
-      onSuccess?.(newData)
-      onClose()
+      onSuccess(newData)
     },
-    [onSuccess, onClose]
+    [onSuccess]
   )
 
   const handleClose = useCallback(() => {
+    // Mencegah modal tertutup saat form sedang di-submit.
     if (!isSubmitting) {
       onClose()
     }
@@ -60,8 +64,7 @@ export function CreateHKIModal({
               Buat Entri HKI Baru
             </DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground mt-1">
-              Isi semua informasi yang diperlukan untuk membuat catatan HKI
-              baru.
+              Isi semua informasi yang diperlukan untuk membuat catatan HKI baru.
             </DialogDescription>
           </div>
         </DialogHeader>
@@ -70,6 +73,7 @@ export function CreateHKIModal({
           <HKIForm
             id={CREATE_FORM_ID}
             mode="create"
+            // Props diteruskan langsung
             jenisOptions={formOptions.jenisOptions}
             statusOptions={formOptions.statusOptions}
             pengusulOptions={formOptions.pengusulOptions}
@@ -82,6 +86,7 @@ export function CreateHKIModal({
 
         <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 px-6 py-4 border-t bg-muted/40">
           <Button
+            type="button"
             variant="outline"
             onClick={handleClose}
             disabled={isSubmitting}
@@ -94,11 +99,19 @@ export function CreateHKIModal({
             disabled={isSubmitting}
             className="gap-2 w-full sm:w-auto"
           >
-            {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {isSubmitting ? 'Menyimpan...' : 'Simpan Data'}
+            {isSubmitting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Menyimpan...</span>
+              </>
+            ) : (
+              'Simpan Data'
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
-}
+})
+
+CreateHKIModal.displayName = 'CreateHKIModal'

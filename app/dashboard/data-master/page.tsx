@@ -1,55 +1,65 @@
-// app/master/page.tsx
+// app/dashboard/data-master/page.tsx
 import { createClient } from '@/utils/supabase/server'
 import { cookies } from 'next/headers'
-import { MasterDataClient } from './master-data-client' // Komponen Klien Utama
+import { MasterDataClient } from './master-data-client'
 import { redirect } from 'next/navigation'
+import { cache } from 'react'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/lib/database.types'
 
-export const dynamic = 'force-dynamic'
+// Revalidate data setiap jam, bagus untuk data master yang jarang berubah
+export const revalidate = 3600
 
 /**
- * Mengambil semua data master secara paralel.
+ * Mengambil semua data master secara paralel dan membungkusnya dalam React `cache`.
+ * `cache` memastikan fungsi ini hanya dieksekusi sekali per-request, bahkan jika
+ * dipanggil dari beberapa tempat.
  */
-async function getMasterData(supabase: any) {
+const getMasterData = cache(async (supabase: SupabaseClient<Database>) => {
   const [jenisRes, kelasRes, pengusulRes] = await Promise.all([
     supabase.from('jenis_hki').select('*').order('id_jenis_hki'),
     supabase.from('kelas_hki').select('*').order('id_kelas'),
     supabase.from('pengusul').select('*').order('nama_opd'),
-  ])
+  ]);
 
-  if (jenisRes.error || kelasRes.error || pengusulRes.error) {
-    console.error('Gagal mengambil data master:', {
-      jenisError: jenisRes.error,
-      kelasError: kelasRes.error,
-      pengusulError: pengusulRes.error,
-    })
-  }
+  // ✅ Penanganan Error yang Lebih Baik:
+  // Jika salah satu query gagal, seluruh halaman akan menampilkan error boundary.
+  // Ini lebih baik daripada menampilkan tabel yang datanya tidak lengkap.
+  if (jenisRes.error) throw new Error(`Gagal memuat Jenis HKI: ${jenisRes.error.message}`);
+  if (kelasRes.error) throw new Error(`Gagal memuat Kelas HKI: ${kelasRes.error.message}`);
+  if (pengusulRes.error) throw new Error(`Gagal memuat Pengusul: ${pengusulRes.error.message}`);
 
+  // ✅ Mengembalikan data dalam satu objek, sesuai dengan props `MasterDataClient` yang baru.
   return {
-    jenisData: jenisRes.data || [],
-    kelasData: kelasRes.data || [],
-    pengusulData: pengusulRes.data || [],
-  }
-}
+    jenis_hki: jenisRes.data || [],
+    kelas_hki: kelasRes.data || [],
+    pengusul: pengusulRes.data || [],
+  };
+});
 
 export default async function MasterDataPage() {
-  const cookieStore = cookies()
-  const supabase = createClient(cookieStore)
+  const cookieStore = cookies();
+  const supabase = createClient(cookieStore);
 
   // Guard: Pastikan hanya admin yang bisa mengakses halaman ini
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    redirect('/login');
+  }
 
   const { data: profile } = await supabase
     .from('profiles')
     .select('role')
     .eq('id', user.id)
-    .single()
-  if (profile?.role !== 'admin') redirect('/dashboard?error=Akses_Ditolak')
+    .single();
+    
+  if (profile?.role !== 'admin') {
+    redirect('/dashboard?error=Akses_Ditolak');
+  }
 
-  // Ambil data
-  const { jenisData, kelasData, pengusulData } = await getMasterData(supabase)
+  // Ambil data menggunakan fungsi yang sudah di-cache
+  // Blok try-catch di sini bisa ditambahkan jika ingin menampilkan UI error kustom
+  const masterData = await getMasterData(supabase);
 
   return (
     <div className="space-y-6">
@@ -62,11 +72,8 @@ export default async function MasterDataPage() {
         </p>
       </div>
 
-      <MasterDataClient
-        initialJenis={jenisData}
-        initialKelas={kelasData}
-        initialPengusul={pengusulData}
-      />
+      {/* ✅ Mengirim data sebagai satu prop `initialData` */}
+      <MasterDataClient initialData={masterData} />
     </div>
-  )
+  );
 }

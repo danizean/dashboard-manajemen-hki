@@ -1,7 +1,8 @@
+// components/hki/edit-hki-modal.tsx
 'use client'
 
-// ✅ OPTIMASI: Tambahkan `memo` untuk konsistensi
-import React, { useState, useCallback, memo } from 'react'
+// ✅ PERBAIKAN: Tambahkan 'useMemo' ke dalam import
+import React, { useState, useCallback, memo, useMemo } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -32,7 +33,7 @@ interface EditHKIModalProps {
 const EDIT_FORM_ID = 'hki-edit-form'
 
 const FormSkeleton = memo(() => (
-  <div className="space-y-6 animate-pulse">
+  <div className="space-y-6 animate-pulse" aria-label="Loading form data">
     {[...Array(3)].map((_, i) => (
       <div key={i} className="space-y-2">
         <Skeleton className="h-4 w-1/4" />
@@ -68,7 +69,6 @@ const ErrorDisplay = memo(
 )
 ErrorDisplay.displayName = 'ErrorDisplay'
 
-// ✅ OPTIMASI: Dibungkus dengan memo untuk mencegah re-render yang tidak perlu
 export const EditHKIModal = memo(({
   isOpen,
   onClose,
@@ -80,20 +80,13 @@ export const EditHKIModal = memo(({
   const { data, isLoading, error, refetch } = useHKIEntry(hkiId, isOpen)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const handleSuccess = useCallback(
-    (updatedData: HKIEntry) => {
-      onSuccess(updatedData)
-    },
-    [onSuccess]
-  )
-
   const handleClose = useCallback(() => {
     if (!isSubmitting) {
       onClose()
     }
   }, [isSubmitting, onClose])
-
-  const renderContent = () => {
+  
+  const modalContent = useMemo(() => {
     if (isLoading) return <FormSkeleton />
     if (error) return <ErrorDisplay error={error} onRetry={refetch} />
     if (data) {
@@ -107,13 +100,13 @@ export const EditHKIModal = memo(({
           pengusulOptions={formOptions.pengusulOptions}
           kelasOptions={formOptions.kelasOptions}
           onSubmittingChange={setIsSubmitting}
-          onSuccess={handleSuccess}
+          onSuccess={onSuccess}
           onError={onError}
         />
       )
     }
     return null
-  }
+  }, [isLoading, error, data, refetch, formOptions, onSuccess, onError]);
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -137,11 +130,10 @@ export const EditHKIModal = memo(({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-6 py-4">
-          {renderContent()}
+          {modalContent}
         </div>
 
-        {/* Tampilkan footer hanya jika form berhasil dimuat */}
-        {data && !isLoading && !error && (
+        {!isLoading && !error && data && (
           <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 px-6 py-4 border-t bg-muted/40">
             <Button
               variant="outline"
@@ -156,8 +148,14 @@ export const EditHKIModal = memo(({
               disabled={isSubmitting}
               className="gap-2 w-full sm:w-auto"
             >
-              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isSubmitting ? 'Menyimpan...' : 'Simpan Perubahan'}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Menyimpan...</span>
+                </>
+              ) : (
+                'Simpan Perubahan'
+              )}
             </Button>
           </DialogFooter>
         )}

@@ -5,99 +5,53 @@ import { createClient } from '@/utils/supabase/server'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { ShieldOff, ServerCrash } from 'lucide-react'
+import { cache, ReactNode } from 'react'
+import type { SupabaseClient, User } from '@supabase/supabase-js'
+import type { Database } from '@/lib/database.types'
 
 export const metadata: Metadata = {
   title: 'Manajemen Pengajuan Data HKI | Dashboard',
   description: 'Manajemen Pengajuan Data Hak Kekayaan Intelektual',
 }
 
+// ✅ Tetap 'force-dynamic' untuk memastikan autentikasi berjalan di setiap request.
 export const dynamic = 'force-dynamic'
-const PATHS = {
-  LOGIN: '/login',
-  DASHBOARD: '/dashboard',
-}
 
-const ALLOWED_ROLES = ['admin']
-type AuthResult = {
-  user: any
-  errorType:
-    | null
-    | 'unauthenticated'
-    | 'unauthorized'
-    | 'profile_not_found'
-    | 'database_error'
-    | 'unexpected_error'
-  errorMessage?: string
-}
-
-async function protectAdminRoute(): Promise<AuthResult> {
-  try {
-    const cookieStore = cookies()
-    const supabase = createClient(cookieStore)
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return { user: null, errorType: 'unauthenticated' }
-    }
-
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError) {
-      console.error(
-        `Database error saat mengambil profil untuk user ID: ${user.id}`,
-        profileError
-      )
-      return {
-        user: null,
-        errorType: 'database_error',
-        errorMessage: profileError.message,
-      }
-    }
-
-    if (!profile) {
-      console.error(
-        `Integritas data error: Tidak ditemukan profil untuk user ID: ${user.id}`
-      )
-      return { user: null, errorType: 'profile_not_found' }
-    }
-
-    if (!profile.role || !ALLOWED_ROLES.includes(profile.role)) {
-      console.warn(
-        `Akses ditolak: User ID ${user.id} dengan role '${profile.role}' mencoba mengakses route admin.`
-      )
-      return { user, errorType: 'unauthorized' }
-    }
-
-    return { user, errorType: null }
-  } catch (error) {
-    console.error(
-      'Terjadi error tak terduga di fungsi protectAdminRoute:',
-      error
-    )
-    return {
-      user: null,
-      errorType: 'unexpected_error',
-      errorMessage:
-        error instanceof Error
-          ? error.message
-          : 'Terjadi kesalahan tidak diketahui',
-    }
+/**
+ * ✅ Mengambil data user dan profil dengan React `cache`.
+ * Ini memastikan bahwa query ke Supabase hanya terjadi SEKALI per request,
+ * bahkan jika fungsi ini dipanggil di beberapa tempat (layout, page, dll).
+ * Ini adalah optimasi performa kunci di App Router.
+ */
+const getUserProfile = cache(async () => {
+  const cookieStore = cookies()
+  const supabase = createClient(cookieStore)
+  
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  if (userError || !user) {
+    // Jika tidak ada user, langsung redirect tanpa perlu proses lebih lanjut.
+    redirect('/login')
   }
-}
 
-const ErrorDisplay = ({
-  icon: Icon,
-  title,
-  description,
-  details,
-}: {
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single()
+  
+  if (profileError) {
+    // Melempar error agar ditangkap oleh Error Boundary atau blok try-catch
+    throw new Error(`Kesalahan database saat mengambil profil: ${profileError.message}`)
+  }
+  
+  if (!profile) {
+    throw new Error(`Profil untuk user ID ${user.id} tidak ditemukan.`)
+  }
+
+  return { user, profile }
+})
+
+const ErrorDisplay = ({ icon: Icon, title, description, details }: {
   icon: React.ElementType
   title: string
   description: string
@@ -105,9 +59,7 @@ const ErrorDisplay = ({
 }) => (
   <div className="flex flex-col items-center justify-center h-full min-h-[calc(100vh-200px)] text-center p-6 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
     <Icon className="h-16 w-16 text-red-500 mb-4" />
-    <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-200">
-      {title}
-    </h1>
+    <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-200">{title}</h1>
     <p className="text-muted-foreground mt-2 max-w-md">{description}</p>
     {details && (
       <pre className="mt-4 p-3 bg-gray-100 dark:bg-gray-800 text-xs text-red-600 dark:text-red-400 rounded-md overflow-x-auto w-full max-w-md">
@@ -117,60 +69,42 @@ const ErrorDisplay = ({
   </div>
 )
 
-export default async function HKILayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  const { user, errorType, errorMessage } = await protectAdminRoute()
+export default async function DashboardLayout({ children }: { children: ReactNode }) {
+  try {
+    const { profile } = await getUserProfile()
 
-  if (errorType === 'unauthenticated') {
-    return redirect(PATHS.LOGIN)
-  }
-
-  if (errorType) {
-    let errorContent
-    switch (errorType) {
-      case 'unauthorized':
-        errorContent = (
-          <ErrorDisplay
-            icon={ShieldOff}
-            title="Akses Ditolak"
-            description="Anda tidak memiliki izin untuk mengakses halaman ini. Silakan hubungi administrator jika Anda merasa ini adalah kesalahan."
-          />
-        )
-        break
-      case 'database_error':
-        errorContent = (
-          <ErrorDisplay
-            icon={ServerCrash}
-            title="Kesalahan Database"
-            description="Gagal terhubung atau mengambil data dari database."
-            details={errorMessage}
-          />
-        )
-        break
-      case 'profile_not_found':
-        errorContent = (
-          <ErrorDisplay
-            icon={ServerCrash}
-            title="Profil Tidak Ditemukan"
-            description="Data profil Anda tidak ditemukan di sistem. Ini adalah kesalahan integritas data."
-          />
-        )
-        break
-      default:
-        errorContent = (
-          <ErrorDisplay
-            icon={ServerCrash}
-            title="Terjadi Kesalahan Tak Terduga"
-            description="Sistem mengalami masalah yang tidak diharapkan."
-            details={errorMessage}
-          />
-        )
+    // ✅ Logika otorisasi disederhanakan.
+    // Jika peran bukan 'admin', redirect dengan pesan error.
+    if (profile.role !== 'admin') {
+      redirect('/dashboard?error=Akses_Ditolak')
     }
-    return <AdminLayout>{errorContent}</AdminLayout>
-  }
 
-  return <AdminLayout>{children}</AdminLayout>
+    // Jika semua validasi lolos, render layout dengan children (halaman).
+    return <AdminLayout>{children}</AdminLayout>
+
+  } catch (error: any) {
+    // Menangkap semua kemungkinan error dari `getUserProfile`
+    // dan menampilkannya dengan UI yang sesuai.
+    let errorContent;
+    if (error.message.includes('Akses_Ditolak')) {
+      errorContent = (
+        <ErrorDisplay
+          icon={ShieldOff}
+          title="Akses Ditolak"
+          description="Anda tidak memiliki izin untuk mengakses halaman ini."
+        />
+      );
+    } else {
+       errorContent = (
+        <ErrorDisplay
+          icon={ServerCrash}
+          title="Terjadi Kesalahan"
+          description="Gagal memuat sesi pengguna atau data profil."
+          details={error.message}
+        />
+      );
+    }
+    // Tetap bungkus error display dengan AdminLayout agar konsisten
+    return <AdminLayout>{errorContent}</AdminLayout>;
+  }
 }

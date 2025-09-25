@@ -1,100 +1,76 @@
 // app/dashboard/data-pengajuan-fasilitasi/page.tsx
+
+// HAPUS baris 'use client' dari sini
+
 import { createClient } from '@/utils/supabase/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { HKIClientPage } from './hki-client-page'
 import { cookies } from 'next/headers'
 import { FormOptions } from '@/lib/types'
 import { Database } from '@/lib/database.types'
+import { cache } from 'react'
 
 // Revalidasi data setiap jam untuk menjaga kesegaran data master
 export const revalidate = 3600
 
-async function getFormOptions(supabase: SupabaseClient<Database>): Promise<FormOptions> {
-  
-  // Menggunakan Promise.allSettled untuk ketahanan error.
-  const results = await Promise.allSettled([
-    supabase
-      .from('jenis_hki')
-      .select('id_jenis_hki, nama_jenis_hki')
-      .order('nama_jenis_hki'),
-    supabase
-      .from('status_hki')
-      .select('id_status, nama_status')
-      .order('id_status'),
-    supabase.rpc('get_distinct_hki_years'),
-    supabase
-      .from('pengusul')
-      .select('id_pengusul, nama_opd')
-      .order('nama_opd'),
-    supabase
-      .from('kelas_hki')
-      .select('id_kelas, nama_kelas, tipe')
-      .order('id_kelas'),
-  ])
+// Definisikan tipe untuk parameter map agar tidak 'any'
+type PengusulOptionRaw = { id_pengusul: number; nama_opd: string };
+type KelasOptionRaw = { id_kelas: number; nama_kelas: string; tipe: string };
 
-  // Helper untuk menangani hasil dari allSettled dan mencatat error
-  const getResultData = (result: PromiseSettledResult<any>, name: string) => {
-    if (result.status === 'fulfilled' && !result.value.error) {
-      return result.value.data ?? []
-    }
-    if (result.status === 'rejected' || result.value.error) {
-      console.error(
-        `Gagal memuat opsi untuk "${name}":`,
-        result.status === 'rejected' ? result.reason : result.value.error.message
-      )
-    }
-    return [] // Kembalikan array kosong jika gagal
+/**
+ * Mengambil semua opsi form dalam satu panggilan RPC ke Supabase.
+ * Menggunakan React `cache` untuk memoization, memastikan fungsi ini hanya berjalan sekali per request.
+ */
+const getFormOptions = cache(async (supabase: SupabaseClient<Database>): Promise<FormOptions> => {
+  // Beri tipe eksplisit pada pemanggilan RPC
+  const { data, error } = await supabase.rpc('get_all_form_options');
+
+  if (error) {
+    console.error('Gagal memuat form options via RPC:', error.message);
+    throw new Error(`Gagal mengambil data form: ${error.message}`);
   }
 
-  const jenisOptions = getResultData(results[0], 'Jenis HKI')
-  const statusOptions = getResultData(results[1], 'Status HKI')
-  const tahunOptions = getResultData(results[2], 'Tahun HKI (RPC)')
-  const pengusulOptionsRaw = getResultData(results[3], 'Pengusul')
-  const kelasOptionsRaw = getResultData(results[4], 'Kelas HKI')
+  // Pastikan 'data' tidak null sebelum diakses
+  if (!data) {
+    throw new Error('RPC tidak mengembalikan data.');
+  }
 
   return {
-    jenisOptions,
-    statusOptions,
-    tahunOptions,
-    pengusulOptions: pengusulOptionsRaw.map(
-      (p: { id_pengusul: number; nama_opd: string }) => ({
-        value: String(p.id_pengusul),
-        label: p.nama_opd,
-      })
-    ),
-    kelasOptions: kelasOptionsRaw.map(
-      (k: { id_kelas: number; nama_kelas: string; tipe: string }) => ({
-        value: String(k.id_kelas),
-        label: `${k.id_kelas} – ${k.nama_kelas} (${k.tipe})`,
-      })
-    ),
+    jenisOptions: data.jenis_options || [],
+    statusOptions: data.status_options || [],
+    tahunOptions: data.tahun_options || [],
+    pengusulOptions: data.pengusul_options?.map((p: PengusulOptionRaw) => ({
+      value: String(p.id_pengusul),
+      label: p.nama_opd,
+    })) || [],
+    kelasOptions: data.kelas_options?.map((k: KelasOptionRaw) => ({
+      value: String(k.id_kelas),
+      label: `${k.id_kelas} – ${k.nama_kelas} (${k.tipe})`,
+    })) || [],
   }
-}
+});
 
 export default async function HKIPage() {
   const cookieStore = cookies()
   const supabase = createClient(cookieStore)
 
+  let formOptions: FormOptions = {
+    jenisOptions: [],
+    statusOptions: [],
+    tahunOptions: [],
+    pengusulOptions: [],
+    kelasOptions: [],
+  };
+  let pageError: string | null = null;
+
   try {
-    const formOptions = await getFormOptions(supabase)
-    return <HKIClientPage formOptions={formOptions} error={null} />
+    formOptions = await getFormOptions(supabase)
   } catch (error) {
     console.error('Gagal memuat prasyarat halaman HKI:', error)
-    return (
-      <HKIClientPage
-        formOptions={{
-          jenisOptions: [],
-          statusOptions: [],
-          tahunOptions: [],
-          pengusulOptions: [],
-          kelasOptions: [],
-        }}
-        error={
-          error instanceof Error
-            ? error.message
-            : 'Gagal memuat opsi filter.'
-        }
-      />
-    )
+    pageError = error instanceof Error
+        ? error.message
+        : 'Gagal memuat opsi filter.'
   }
+  
+  return <HKIClientPage formOptions={formOptions} error={pageError} />
 }

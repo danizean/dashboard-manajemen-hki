@@ -1,8 +1,9 @@
+// components/forms/hki-form.tsx
 'use client'
 
 import React, { useState, useMemo, useEffect, useCallback, memo } from 'react'
 import { useRouter } from 'next/navigation'
-import { useForm, useWatch, FieldErrors } from 'react-hook-form'
+import { useForm, useWatch, FieldErrors, Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { toast } from 'sonner'
@@ -19,20 +20,21 @@ import { cn } from '@/lib/utils'
 
 // === KONFIGURASI & SKEMA VALIDASI ===
 
-const MAX_FILE_SIZE_MB = 5
-const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
-const ACCEPTED_FILE_TYPES = ['application/pdf']
+const MAX_FILE_SIZE_MB = 5;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+const ACCEPTED_FILE_TYPES = ['application/pdf'];
 
-const fileSchema = z.any()
+// Skema Zod untuk validasi file, kini lebih tangguh
+const fileSchema = z.instanceof(FileList)
   .optional()
-  .refine((files) => {
-    if (typeof window === 'undefined' || !files || !(files instanceof FileList) || files.length === 0) return true
-    return files[0].size <= MAX_FILE_SIZE_BYTES
-  }, `Ukuran file maksimal ${MAX_FILE_SIZE_MB}MB.`)
-  .refine((files) => {
-    if (typeof window === 'undefined' || !files || !(files instanceof FileList) || files.length === 0) return true
-    return ACCEPTED_FILE_TYPES.includes(files[0].type)
-  }, 'Hanya file format .pdf.')
+  .refine(
+    (files) => !files || files.length === 0 || files[0].size <= MAX_FILE_SIZE_BYTES,
+    `Ukuran file maksimal ${MAX_FILE_SIZE_MB}MB.`
+  )
+  .refine(
+    (files) => !files || files.length === 0 || ACCEPTED_FILE_TYPES.includes(files[0].type),
+    'Hanya file format .pdf.'
+  );
 
 const hkiSchema = z.object({
   nama_hki: z.string().min(3, 'Nama HKI harus memiliki minimal 3 karakter.'),
@@ -56,41 +58,104 @@ const hkiSchema = z.object({
   jenis_produk: data.jenis_produk === '' ? null : data.jenis_produk,
   keterangan: data.keterangan === '' ? null : data.keterangan,
   id_kelas: data.id_kelas === '' ? null : data.id_kelas,
-}))
+}));
 
-type HKIFormData = z.infer<typeof hkiSchema>
-type ComboboxOption = { value: string; label: string }
+type HKIFormData = z.infer<typeof hkiSchema>;
+type ComboboxOption = { value: string; label: string };
 
 interface HKIFormProps {
-  id: string
-  initialData?: HKIEntry
-  mode: 'create' | 'edit'
-  jenisOptions: JenisHKI[]
-  statusOptions: StatusHKI[]
-  pengusulOptions: ComboboxOption[]
-  kelasOptions: ComboboxOption[]
-  onSubmittingChange: (isSubmitting: boolean) => void
-  onSuccess?: (newData: HKIEntry) => void
-  onError?: (message: string) => void
+  id: string;
+  initialData?: HKIEntry;
+  mode: 'create' | 'edit';
+  jenisOptions: JenisHKI[];
+  statusOptions: StatusHKI[];
+  pengusulOptions: ComboboxOption[];
+  kelasOptions: ComboboxOption[];
+  onSubmittingChange: (isSubmitting: boolean) => void;
+  onSuccess?: (newData: HKIEntry) => void;
+  onError?: (message: string) => void;
 }
+
+// === KOMPONEN-KOMPONEN FORM YANG DIPISAH ===
+
+const FileUploader = memo(({ control, formId, isSubmitting, initialPdf, onRemoveExisting }: {
+  control: Control<HKIFormData>;
+  formId: string;
+  isSubmitting: boolean;
+  initialPdf?: string | null;
+  onRemoveExisting: () => void;
+}) => {
+  const [isDragging, setIsDragging] = useState(false);
+  const selectedFile = useWatch({ control, name: 'sertifikat_pdf' });
+  const showExistingFile = !!initialPdf && !selectedFile?.[0];
+
+  return (
+    <FormField
+      control={control}
+      name="sertifikat_pdf"
+      render={({ field: { onChange, onBlur, name, ref }, fieldState }) => (
+        <FormItem>
+          <FormLabel>Sertifikat PDF (Opsional)</FormLabel>
+          <FormControl>
+            <Input
+              type="file"
+              accept=".pdf"
+              className="hidden"
+              id={`${formId}-file-upload`}
+              name={name}
+              ref={ref}
+              onBlur={onBlur}
+              onChange={(e) => onChange(e.target.files)}
+              disabled={isSubmitting}
+            />
+          </FormControl>
+          <label
+            htmlFor={`${formId}-file-upload`}
+            className={cn(
+              'flex items-center justify-center w-full p-4 border-2 border-dashed rounded-lg cursor-pointer transition-colors',
+              isDragging && 'border-primary bg-primary/10',
+              isSubmitting ? 'bg-muted/50 cursor-not-allowed' : 'hover:bg-muted/50'
+            )}
+            onDragEnter={() => setIsDragging(true)}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={() => setIsDragging(false)}
+          >
+            <div className="text-center">
+              <FileText className="mx-auto h-10 w-10 text-muted-foreground" />
+              <p className="mt-2 text-sm text-muted-foreground">
+                <span className="font-semibold text-primary">Klik untuk memilih file</span> atau seret file ke sini
+              </p>
+              <p className="text-xs text-muted-foreground">PDF (Maks. {MAX_FILE_SIZE_MB}MB)</p>
+            </div>
+          </label>
+          {showExistingFile && (
+            <div className="mt-2 p-2 border rounded-md flex items-center justify-between bg-muted/50 text-sm">
+              <span className="truncate text-blue-600 font-medium">{initialPdf.split('/').pop()}</span>
+              <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={onRemoveExisting}><X className="h-4 w-4" /></Button>
+            </div>
+          )}
+          {selectedFile?.[0] && (
+            <div className="mt-2 p-2 border rounded-md flex items-center justify-between bg-muted/50 text-sm">
+              <span className="truncate text-green-600 font-medium">{selectedFile[0].name}</span>
+              <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => onChange(null)}><X className="h-4 w-4" /></Button>
+            </div>
+          )}
+          <FormDescription>
+            {initialPdf && 'Mengunggah file baru akan menggantikan file yang lama.'}
+          </FormDescription>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+});
+FileUploader.displayName = 'FileUploader';
 
 // === KOMPONEN UTAMA ===
 
-export const HKIForm = memo(({
-  id,
-  initialData,
-  mode,
-  jenisOptions,
-  statusOptions,
-  pengusulOptions,
-  kelasOptions,
-  onSubmittingChange,
-  onSuccess,
-  onError,
-}: HKIFormProps) => {
-  const router = useRouter()
-  const [isDeletingFile, setIsDeletingFile] = useState(false)
-  const [isDragging, setIsDragging] = useState(false)
+export const HKIForm = memo(({ id, initialData, mode, ...props }: HKIFormProps) => {
+  const { jenisOptions, statusOptions, pengusulOptions, kelasOptions, onSubmittingChange, onSuccess, onError } = props;
+  const [isDeletingFile, setIsDeletingFile] = useState(false);
 
   const defaultValues = useMemo(() => ({
     nama_hki: initialData?.nama_hki || '',
@@ -104,93 +169,84 @@ export const HKIForm = memo(({
     id_pengusul: initialData?.pengusul?.id_pengusul.toString() || undefined,
     id_kelas: initialData?.kelas?.id_kelas.toString() || undefined,
     sertifikat_pdf: undefined,
-  }), [initialData])
-  
+  }), [initialData]);
+
   const form = useForm<HKIFormData>({
     resolver: zodResolver(hkiSchema),
     defaultValues,
-  })
+    mode: 'onBlur', // Validasi saat field kehilangan fokus
+  });
 
-  const selectedFile = useWatch({ control: form.control, name: 'sertifikat_pdf' })
-  const { formState: { isSubmitting } } = form
+  const { formState: { isSubmitting } } = form;
 
   useEffect(() => {
-    onSubmittingChange(isSubmitting)
-  }, [isSubmitting, onSubmittingChange])
-
+    onSubmittingChange(isSubmitting);
+  }, [isSubmitting, onSubmittingChange]);
+  
+  // Memoize opsi tahun untuk performa
   const yearOptions = useMemo(() => {
-    const currentYear = new Date().getFullYear()
-    const years = []
-    for (let i = currentYear + 1; i >= currentYear - 25; i--) {
-      years.push({ value: i.toString(), label: i.toString() })
-    }
-    return years
-  }, [])
-  
-  const focusOnError = useCallback((fieldName: string) => {
-    setTimeout(() => {
-      const element = document.querySelector(`[name="${fieldName}"]`) as HTMLElement
-      element?.focus({ preventScroll: true })
-      element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }, 50)
-  }, [])
-  
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: 27 }, (_, i) => {
+      const year = currentYear + 1 - i;
+      return { value: year.toString(), label: year.toString() };
+    });
+  }, []);
+
   const onInvalid = useCallback((errors: FieldErrors<HKIFormData>) => {
-    const firstErrorKey = Object.keys(errors)[0] as keyof HKIFormData
-    const firstErrorMessage = errors[firstErrorKey]?.message
-    toast.error(`Validasi Gagal: ${firstErrorMessage}`)
-    focusOnError(firstErrorKey)
-  }, [focusOnError])
+    const firstErrorKey = Object.keys(errors)[0] as keyof HKIFormData;
+    if (firstErrorKey) {
+        toast.error('Validasi Gagal', { description: errors[firstErrorKey]?.message });
+        const element = document.querySelector(`[name="${firstErrorKey}"]`) as HTMLElement;
+        element?.focus({ preventScroll: true });
+        element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, []);
 
   const onSubmit = useCallback(async (data: HKIFormData) => {
-    const actionText = mode === 'create' ? 'membuat' : 'memperbarui'
-    const toastId = toast.loading(`Sedang ${actionText} entri HKI...`)
+    const actionText = mode === 'create' ? 'membuat' : 'memperbarui';
+    const toastId = toast.loading(`Sedang ${actionText} entri HKI...`);
 
     try {
-      const formData = new FormData()
-      const file = data.sertifikat_pdf?.[0]
+      const formData = new FormData();
+      const file = data.sertifikat_pdf?.[0];
 
-      if (file instanceof File) formData.append('file', file)
-      if (mode === 'edit' && isDeletingFile) formData.append('delete_sertifikat', 'true')
+      if (file instanceof File) formData.append('file', file);
+      if (mode === 'edit' && isDeletingFile) formData.append('delete_sertifikat', 'true');
       
-      for (const [key, value] of Object.entries(data)) {
-        if (key === 'sertifikat_pdf') continue
-        if (value !== null && value !== undefined) {
-          formData.append(key, String(value))
+      Object.entries(data).forEach(([key, value]) => {
+        if (key !== 'sertifikat_pdf' && value !== null && value !== undefined) {
+          formData.append(key, String(value));
         }
-      }
+      });
 
-      const url = mode === 'create' ? '/api/hki' : `/api/hki/${initialData?.id_hki}`
-      const method = mode === 'create' ? 'POST' : 'PATCH'
-      const response = await fetch(url, { method, body: formData })
-      const result = await response.json()
+      const url = mode === 'create' ? '/api/hki' : `/api/hki/${initialData?.id_hki}`;
+      const method = mode === 'create' ? 'POST' : 'PATCH';
+      const response = await fetch(url, { method, body: formData });
+      const result = await response.json();
 
-      if (!response.ok) throw new Error(result.message || `Gagal ${actionText} data.`)
+      if (!response.ok) throw new Error(result.message || `Gagal ${actionText} data.`);
 
       toast.success(`Data HKI berhasil di${actionText}!`, {
         id: toastId,
         description: `Entri untuk "${data.nama_hki}" telah disimpan.`,
-      })
+      });
 
-      if (onSuccess) onSuccess(result.data)
-      else router.refresh()
+      onSuccess?.(result.data);
 
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : `Terjadi kesalahan saat ${actionText} data.`
+      const errorMessage = err instanceof Error ? err.message : `Terjadi kesalahan saat ${actionText} data.`;
       toast.error(errorMessage, {
         id: toastId,
         description: 'Silakan periksa kembali isian Anda atau coba beberapa saat lagi.',
-      })
-      if (onError) onError(errorMessage)
+      });
+      onError?.(errorMessage);
     }
-  }, [mode, initialData, isDeletingFile, onSuccess, onError, router])
-
-  const handleRemoveExistingFile = () => {
-    setIsDeletingFile(true)
-    form.setValue('sertifikat_pdf', undefined, { shouldValidate: true })
-  }
+  }, [mode, initialData, isDeletingFile, onSuccess, onError]);
   
-  const showExistingFile = mode === 'edit' && initialData?.sertifikat_pdf && !selectedFile?.[0] && !isDeletingFile
+  const handleRemoveExistingFile = useCallback(() => {
+    setIsDeletingFile(true);
+    form.setValue('sertifikat_pdf', undefined, { shouldValidate: true });
+  }, [form]);
 
   return (
     <Form {...form}>
@@ -200,7 +256,6 @@ export const HKIForm = memo(({
         className="space-y-6"
       >
         <fieldset disabled={isSubmitting} className="space-y-6">
-
           <Card>
             <CardHeader><CardTitle>Informasi Utama HKI</CardTitle></CardHeader>
             <CardContent className="space-y-6">
@@ -269,7 +324,7 @@ export const HKIForm = memo(({
                 <FormField name="tahun_fasilitasi" control={form.control} render={({ field }) => (
                   <FormItem>
                     <FormLabel>Tahun Fasilitasi *</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={String(field.value)}>
+                    <Select onValueChange={(value) => field.onChange(Number(value))} defaultValue={String(field.value)}>
                       <FormControl><SelectTrigger><SelectValue placeholder="Pilih tahun" /></SelectTrigger></FormControl>
                       <SelectContent><SelectGroup>{yearOptions.map((year) => (<SelectItem key={year.value} value={year.value}>{year.label}</SelectItem>))}</SelectGroup></SelectContent>
                     </Select>
@@ -277,7 +332,6 @@ export const HKIForm = memo(({
                   </FormItem>
                 )} />
               </div>
-
               <FormField name="id_pengusul" control={form.control} render={({ field }) => (
                 <FormItem className="flex flex-col">
                   <FormLabel>Pengusul (OPD) *</FormLabel>
@@ -285,7 +339,6 @@ export const HKIForm = memo(({
                   <FormMessage />
                 </FormItem>
               )} />
-
               <FormField name="id_kelas" control={form.control} render={({ field }) => (
                 <FormItem className="flex flex-col">
                   <FormLabel>Kelas HKI (Opsional)</FormLabel>
@@ -293,7 +346,6 @@ export const HKIForm = memo(({
                   <FormMessage />
                 </FormItem>
               )} />
-              
               <FormField name="keterangan" control={form.control} render={({ field }) => (
                 <FormItem>
                   <FormLabel>Keterangan</FormLabel>
@@ -301,63 +353,12 @@ export const HKIForm = memo(({
                   <FormMessage />
                 </FormItem>
               )} />
-
-              <FormField control={form.control} name="sertifikat_pdf" 
-                render={({ field: { onChange, onBlur, name, ref } }) => ( // ✅ PERBAIKAN: `value` dan `...restField` dihapus
-                  <FormItem>
-                    <FormLabel>Sertifikat PDF (Opsional)</FormLabel>
-                    <FormControl>
-                      <Input 
-                        type="file" 
-                        accept=".pdf" 
-                        className="hidden" 
-                        id={`${id}-file-upload`}
-                        name={name} // ✅ PERBAIKAN: Props diteruskan secara manual
-                        ref={ref}   // ✅ PERBAIKAN: Props diteruskan secara manual
-                        onBlur={onBlur} // ✅ PERBAIKAN: Props diteruskan secara manual
-                        onChange={(e) => {
-                          onChange(e.target.files)
-                          if (e.target.files?.length) setIsDeletingFile(false)
-                        }}
-                      />
-                    </FormControl>
-                    <label htmlFor={`${id}-file-upload`}
-                      className={cn(`flex items-center justify-center w-full p-4 border-2 border-dashed rounded-lg cursor-pointer transition-colors`,
-                        isDragging && 'border-primary bg-primary/10',
-                        isSubmitting ? 'bg-muted/50 cursor-not-allowed' : 'hover:bg-muted/50'
-                      )}
-                      onDragEnter={() => setIsDragging(true)}
-                      onDragLeave={() => setIsDragging(false)}
-                      onDrop={() => setIsDragging(false)}
-                    >
-                      <div className="text-center">
-                        <FileText className="mx-auto h-10 w-10 text-muted-foreground" />
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          <span className="font-semibold text-primary">Klik untuk memilih file</span> atau seret file ke sini
-                        </p>
-                        <p className="text-xs text-muted-foreground">PDF (Maks. {MAX_FILE_SIZE_MB}MB)</p>
-                      </div>
-                    </label>
-
-                    {showExistingFile && (
-                      <div className="mt-2 p-2 border rounded-md flex items-center justify-between bg-muted/50 text-sm">
-                        <span className="truncate text-blue-600 font-medium">{initialData.sertifikat_pdf?.split('/').pop()}</span>
-                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={handleRemoveExistingFile}><X className="h-4 w-4" /></Button>
-                      </div>
-                    )}
-
-                    {selectedFile?.[0] && (
-                      <div className="mt-2 p-2 border rounded-md flex items-center justify-between bg-muted/50 text-sm">
-                        <span className="truncate text-green-600 font-medium">{selectedFile[0].name}</span>
-                        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" onClick={() => onChange(null)}><X className="h-4 w-4" /></Button>
-                      </div>
-                    )}
-                    <FormDescription>
-                      {mode === 'edit' && initialData?.sertifikat_pdf && 'Mengunggah file baru akan menggantikan file yang lama.'}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )} 
+              <FileUploader
+                control={form.control}
+                formId={id}
+                isSubmitting={isSubmitting}
+                initialPdf={!isDeletingFile ? initialData?.sertifikat_pdf : null}
+                onRemoveExisting={handleRemoveExistingFile}
               />
             </CardContent>
           </Card>
@@ -366,4 +367,4 @@ export const HKIForm = memo(({
     </Form>
   )
 })
-HKIForm.displayName = 'HKIForm'
+HKIForm.displayName = 'HKIForm';

@@ -1,7 +1,6 @@
-// app/components/hki/export-modal.tsx
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useCallback } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -20,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { HKIEntry, JenisHKI, StatusHKI } from '@/lib/types'
+import { StatusHKI } from '@/lib/types'
 import {
   BookCheck,
   Building,
@@ -28,8 +27,6 @@ import {
   Loader2,
   Upload,
 } from 'lucide-react'
-import { toast } from 'sonner'
-
 import { downloadFilteredExport } from '@/app/services/hki-service'
 import { Combobox } from '@/components/ui/combobox'
 
@@ -80,6 +77,10 @@ export function ExportModal({
   }
 
   const canExport = filterValue !== ''
+
+  // ✅ OPTIMASI: Logika handleExport disederhanakan.
+  // Komponen ini tidak perlu lagi tahu tentang 'toast.promise'.
+  // Tugasnya hanya memanggil service dan mengelola state loading lokal.
   const handleExport = async () => {
     if (!canExport) return
     setIsExporting(true)
@@ -92,22 +93,21 @@ export function ExportModal({
       pengusulId: filterBy === 'pengusul' ? filterValue : '',
     }
 
-    const exportPromise = downloadFilteredExport({
-      format,
-      filters, 
-    })
-
-    toast.promise(exportPromise, {
-      loading: 'Membuat file ekspor, mohon tunggu...',
-      success: 'File berhasil diunduh! Proses dimulai di browser Anda.',
-      error: (err) => err.message || 'Gagal mengekspor data.',
-    })
-
     try {
-      await exportPromise
+      // Panggil service. Service akan menangani notifikasi toast.
+      await downloadFilteredExport({
+        format,
+        filters,
+      })
+      // Jika berhasil, tutup modal. Jika gagal, service akan menampilkan toast error.
       onClose()
     } catch (e) {
+      // Blok catch ini akan menangani error yang tidak terduga dari service,
+      // meskipun service itu sendiri sudah menanganinya dengan toast.
+      // Ini sebagai lapisan pengaman tambahan.
+      console.error("Gagal mengekspor dari modal:", e)
     } finally {
+      // Pastikan state loading selalu di-reset.
       setIsExporting(false)
     }
   }
