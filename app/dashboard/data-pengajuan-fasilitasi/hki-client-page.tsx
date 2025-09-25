@@ -1,5 +1,4 @@
 // app/dashboard/data-pengajuan-fasilitasi/hki-client-page.tsx
-// app/dashboard/data-pengajuan-fasilitasi/hki-client-page.tsx
 'use client'
 
 import React, { useState, useMemo, Suspense, useCallback, useTransition } from 'react'
@@ -13,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useHkiRealtime } from '@/hooks/useHkiRealtime'
 
-// Gunakan dynamic import untuk komponen berat (Modal)
+// Gunakan dynamic import untuk komponen berat (Modal) agar tidak membebani loading awal
 const EditHKIModal = dynamic(() => import('@/components/hki/edit-hki-modal').then(mod => mod.EditHKIModal));
 const CreateHKIModal = dynamic(() => import('@/components/hki/create-hki-modal').then(mod => mod.CreateHKIModal));
 const ViewHKIModal = dynamic(() => import('@/components/hki/view-hki-modal').then(mod => mod.ViewHKIModal));
@@ -24,7 +23,7 @@ interface HKIClientPageProps {
   error: string | null
 }
 type HkiQueryData = { data: HKIEntry[]; totalCount: number };
-type ModalState = 
+type ModalState =
   | { type: 'create' }
   | { type: 'edit'; hkiId: number }
   | { type: 'view'; entry: HKIEntry }
@@ -55,11 +54,11 @@ const ServerErrorDisplay = ({ errorMessage, onRetry }: { errorMessage: string; o
 const PageHeader = ({ totalCount, pageSize, pageIndex }: { totalCount: number; pageSize: number; pageIndex: number }) => {
   const start = totalCount > 0 ? pageIndex * pageSize + 1 : 0
   const end = Math.min((pageIndex + 1) * pageSize, totalCount)
-  
+
   return (
     <div>
       <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Manajemen Data Pengajuan Fasilitasi HKI</h1>
-      {totalCount > 0 && 
+      {totalCount > 0 &&
         <p className="mt-2 text-muted-foreground">
           Menampilkan {start} - {end} dari total {totalCount} data.
         </p>
@@ -72,39 +71,34 @@ const PageHeader = ({ totalCount, pageSize, pageIndex }: { totalCount: number; p
 export function HKIClientPage({ formOptions, error: serverError }: HKIClientPageProps) {
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
-  const [isPending, startTransition] = useTransition()
   
-  // ✅ State Management Modal yang lebih baik
   const [modalState, setModalState] = useState<ModalState>(null);
-  
+
+  // Berlangganan update realtime dari Supabase
   useHkiRealtime();
-  
+
+  // Kunci query yang dinamis berdasarkan parameter URL, penting untuk caching yang benar
   const queryKey = useMemo(() => ['hkiData', searchParams.toString()], [searchParams]);
 
   const { data, error, isLoading, isFetching, refetch } = useQuery<HkiQueryData>({
     queryKey,
     queryFn: () => fetchHkiData(new URLSearchParams(searchParams.toString())),
-    placeholderData: (previousData) => previousData,
-    retry: 1,
+    placeholderData: (previousData) => previousData, // Menjaga data lama terlihat saat fetching baru
+    retry: 1, // Hanya coba lagi sekali jika gagal
   });
 
   const { data: hkiData = [], totalCount = 0 } = data || {};
 
-  // ✅ Logika Mutation yang lebih rapi
+  // Hook terpusat untuk semua logika mutasi data
   const useHkiMutations = () => {
-    const onMutationSuccess = (message: string) => {
-      setModalState(null);
-      toast.success(message);
-      queryClient.invalidateQueries({ queryKey });
-    };
-    
     const onMutationError = (err: Error, message: string, context: any) => {
+      // Jika mutasi gagal, kembalikan UI ke keadaan semula (rollback)
       if (context?.previousData) {
         queryClient.setQueryData(queryKey, context.previousData);
       }
       toast.error(`${message}: ${err.message}`);
     };
-    
+
     const deleteMutation = useMutation({
       mutationFn: async (ids: number[]) => {
         const response = await fetch('/api/hki/bulk-delete', {
@@ -119,7 +113,8 @@ export function HKIClientPage({ formOptions, error: serverError }: HKIClientPage
       onMutate: async (idsToDelete: number[]) => {
         await queryClient.cancelQueries({ queryKey });
         const previousData = queryClient.getQueryData<HkiQueryData>(queryKey);
-        queryClient.setQueryData<HkiQueryData>(queryKey, (old) => 
+        // Secara optimis hapus item dari UI
+        queryClient.setQueryData<HkiQueryData>(queryKey, (old) =>
           old ? { ...old, data: old.data.filter(item => !idsToDelete.includes(item.id_hki)), totalCount: old.totalCount - idsToDelete.length } : { data: [], totalCount: 0 }
         );
         return { previousData };
@@ -128,7 +123,7 @@ export function HKIClientPage({ formOptions, error: serverError }: HKIClientPage
       onError: (err: Error, vars, context) => onMutationError(err, 'Gagal menghapus', context),
       onSettled: () => queryClient.invalidateQueries({ queryKey }),
     });
-    
+
     const statusMutation = useMutation({
         mutationFn: async ({ entryId, newStatusId }: { entryId: number, newStatusId: number }) => {
             const response = await fetch(`/api/hki/${entryId}/status`, {
@@ -145,6 +140,7 @@ export function HKIClientPage({ formOptions, error: serverError }: HKIClientPage
         onMutate: async ({ entryId, newStatusId }) => {
             await queryClient.cancelQueries({ queryKey });
             const previousData = queryClient.getQueryData<HkiQueryData>(queryKey);
+            // Secara optimis perbarui status di UI
             queryClient.setQueryData<HkiQueryData>(queryKey, (old) => {
                 if (!old) return { data: [], totalCount: 0 };
                 return {
@@ -163,28 +159,33 @@ export function HKIClientPage({ formOptions, error: serverError }: HKIClientPage
         onSettled: () => queryClient.invalidateQueries({ queryKey, exact: false }),
     });
 
-    return { deleteMutation, statusMutation, onMutationSuccess };
+    return { deleteMutation, statusMutation };
   };
 
-  const { deleteMutation, statusMutation, onMutationSuccess } = useHkiMutations();
+  const { deleteMutation, statusMutation } = useHkiMutations();
   
   const handleStatusUpdate = useCallback((entryId: number, newStatusId: number) => {
-    startTransition(() => {
-      statusMutation.mutate({ entryId, newStatusId });
-    });
+    statusMutation.mutate({ entryId, newStatusId });
   }, [statusMutation]);
 
   const pagination = useMemo(() => ({
     pageIndex: Number(searchParams.get('page') ?? 1) - 1,
     pageSize: Number(searchParams.get('pageSize') ?? 50),
   }), [searchParams]);
-
+  
+  // Penanganan error jika data master gagal dimuat dari server
   if (serverError) {
     return <ServerErrorDisplay errorMessage={serverError} onRetry={() => refetch()} />
   }
 
+  // Penanganan error saat fetching data HKI
+  if (error) {
+    return <ServerErrorDisplay errorMessage={error.message} onRetry={() => refetch()} />
+  }
+
   return (
     <div className="space-y-6">
+      {/* --- UI FEEDBACK: PROGRESS BAR --- */}
       {isFetching && !isLoading && (
         <div className="fixed top-0 left-0 right-0 h-1 z-50">
           <div className="h-full bg-primary/50 animate-pulse w-full" />
@@ -206,32 +207,41 @@ export function HKIClientPage({ formOptions, error: serverError }: HKIClientPage
         isLoading={isLoading}
       />
 
+      {/* Gunakan Suspense untuk lazy loading modal agar tidak memperlambat render awal */}
       <Suspense fallback={null}>
         {modalState?.type === 'edit' && (
-          <EditHKIModal 
-            key={`edit-${modalState.hkiId}`} 
-            isOpen={true} 
-            hkiId={modalState.hkiId} 
-            onClose={() => setModalState(null)} 
-            onSuccess={(item) => onMutationSuccess(`Data "${item.nama_hki}" berhasil diperbarui.`)} 
-            onError={(msg) => toast.error(msg)} 
-            formOptions={formOptions} 
+          <EditHKIModal
+            key={`edit-${modalState.hkiId}`}
+            isOpen={true}
+            hkiId={modalState.hkiId}
+            onClose={() => setModalState(null)}
+            onSuccess={(item) => {
+              setModalState(null);
+              toast.success(`Data "${item.nama_hki}" berhasil diperbarui.`);
+              queryClient.invalidateQueries({ queryKey });
+            }}
+            onError={(msg) => toast.error(msg)}
+            formOptions={formOptions}
           />
         )}
         {modalState?.type === 'create' && (
-          <CreateHKIModal 
-            isOpen={true} 
-            onClose={() => setModalState(null)} 
-            onSuccess={(item) => onMutationSuccess(`Data "${item.nama_hki}" berhasil dibuat.`)} 
-            onError={(msg) => toast.error(msg)} 
-            formOptions={formOptions} 
+          <CreateHKIModal
+            isOpen={true}
+            onClose={() => setModalState(null)}
+            onSuccess={(item) => {
+              setModalState(null);
+              toast.success(`Data "${item.nama_hki}" berhasil dibuat.`);
+              queryClient.invalidateQueries({ queryKey });
+            }}
+            onError={(msg) => toast.error(msg)}
+            formOptions={formOptions}
           />
         )}
         {modalState?.type === 'view' && (
-          <ViewHKIModal 
-            isOpen={true} 
-            onClose={() => setModalState(null)} 
-            entry={modalState.entry} 
+          <ViewHKIModal
+            isOpen={true}
+            onClose={() => setModalState(null)}
+            entry={modalState.entry}
           />
         )}
       </Suspense>

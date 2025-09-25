@@ -1,52 +1,90 @@
 // components/layout/navbar.tsx
 'use client'
 
-import React from 'react'
+// PERBAIKAN: Menambahkan 'memo' ke dalam import dari React
+import React, { useState, useEffect, useCallback, useMemo, memo } from 'react'
 import Link from 'next/link'
-import { useRouter, usePathname } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Menu, LogOut, Bell, Settings, ChevronRight } from 'lucide-react'
-import { createClient } from '@/lib/supabase-browser'
-import { toast } from 'sonner'
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
 import { User } from '@supabase/supabase-js'
+import { toast } from 'sonner'
+import { Menu, LogOut, Bell, Settings, ChevronRight } from 'lucide-react'
+
+import { createClient } from '@/lib/supabase-browser'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
 
 interface TopbarProps {
   sidebarOpen: boolean
   setSidebarOpen: (val: boolean) => void
 }
 
+/**
+ * Komponen Breadcrumbs untuk navigasi.
+ * Dibuat sebagai komponen terpisah dan di-memoize untuk optimasi.
+ */
+const TopbarBreadcrumbs = memo(function TopbarBreadcrumbs() {
+  const pathname = usePathname()
+
+  const breadcrumbs = useMemo(() => {
+    const pathParts = pathname.split('/').filter(Boolean)
+    if (pathParts[0] !== 'dashboard') return [];
+
+    return pathParts.slice(1).map((part, index) => {
+      const href = `/dashboard/${pathParts.slice(1, index + 2).join('/')}`
+      const label = part.replace(/-/g, ' ')
+      return { href, label }
+    })
+  }, [pathname])
+
+  return (
+    <Breadcrumb className="hidden md:flex">
+      <BreadcrumbList>
+        <BreadcrumbItem>
+          <BreadcrumbLink asChild>
+            <Link href="/dashboard">Dashboard</Link>
+          </BreadcrumbLink>
+        </BreadcrumbItem>
+        {breadcrumbs.map((crumb, index) => (
+          <React.Fragment key={crumb.href}>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              {index === breadcrumbs.length - 1 ? (
+                <BreadcrumbPage className="capitalize">{crumb.label}</BreadcrumbPage>
+              ) : (
+                <BreadcrumbLink asChild>
+                  <Link href={crumb.href} className="capitalize">{crumb.label}</Link>
+                </BreadcrumbLink>
+              )}
+            </BreadcrumbItem>
+          </React.Fragment>
+        ))}
+      </BreadcrumbList>
+    </Breadcrumb>
+  )
+})
+TopbarBreadcrumbs.displayName = 'TopbarBreadcrumbs';
+
+
 export function Topbar({ sidebarOpen, setSidebarOpen }: TopbarProps) {
   const [user, setUser] = useState<User | null>(null)
   const [loadingUser, setLoadingUser] = useState(true)
   const router = useRouter()
-  const pathname = usePathname()
   const supabase = useMemo(() => createClient(), [])
 
   useEffect(() => {
     const fetchInitialUser = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
       setUser(user)
       setLoadingUser(false)
     }
 
     fetchInitialUser()
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
     })
 
@@ -56,30 +94,22 @@ export function Topbar({ sidebarOpen, setSidebarOpen }: TopbarProps) {
   }, [supabase])
 
   const handleLogout = useCallback(async () => {
+    const toastId = toast.loading('Sedang keluar...')
     try {
       await supabase.auth.signOut()
-      toast.success('Berhasil keluar!')
+      toast.success('Berhasil keluar!', { id: toastId })
       router.push('/login')
     } catch (err) {
       console.error('❌ Error saat logout:', err)
-      toast.error('Gagal keluar. Coba lagi.')
+      toast.error('Gagal keluar. Silakan coba lagi.', { id: toastId })
     }
   }, [router, supabase])
-
-  const breadcrumbs = useMemo(
-    () =>
-      pathname
-        .split('/')
-        .filter(Boolean)
-        .map((crumb) => crumb.replace(/-/g, ' ')),
-    [pathname]
-  )
 
   const getInitials = (email?: string | null) =>
     email ? email.charAt(0).toUpperCase() : '?'
 
   return (
-    <header className="sticky top-0 z-30 w-full border-b border-slate-200 bg-slate-50/80 shadow-sm backdrop-blur-md">
+    <header className="sticky top-0 z-30 w-full border-b border-border bg-background/80 shadow-sm backdrop-blur-md">
       <div className="flex h-16 items-center justify-between px-4 md:px-6">
         {/* Left Section */}
         <div className="flex items-center gap-2 sm:gap-4">
@@ -88,31 +118,13 @@ export function Topbar({ sidebarOpen, setSidebarOpen }: TopbarProps) {
             size="icon"
             aria-label="Toggle Sidebar"
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="text-slate-600 transition hover:bg-slate-200/60 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="text-muted-foreground transition-transform hover:scale-105"
           >
             <Menu className="h-6 w-6" />
           </Button>
 
-          <nav
-            aria-label="Breadcrumb"
-            className="hidden items-center gap-1.5 text-sm font-medium text-slate-500 md:flex"
-          >
-            <Link
-              href="/dashboard"
-              className="capitalize transition-colors hover:text-slate-900"
-            >
-              {breadcrumbs[0] || 'Dasbor'}
-            </Link>
-            {breadcrumbs.slice(1).map((crumb, idx) => (
-              // ✅ FIX: Menggunakan shorthand fragment <>...</>
-              <React.Fragment key={idx}>
-                <ChevronRight className="h-4 w-4 text-slate-400" />
-                <span className="capitalize text-slate-800 font-semibold">
-                  {crumb}
-                </span>
-              </React.Fragment>
-            ))}
-          </nav>
+          <TopbarBreadcrumbs />
+
         </div>
 
         {/* Right Section */}
@@ -121,31 +133,34 @@ export function Topbar({ sidebarOpen, setSidebarOpen }: TopbarProps) {
             variant="ghost"
             size="icon"
             aria-label="Notifikasi"
-            className="relative text-slate-600 transition-colors hover:bg-slate-200/60 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="relative text-muted-foreground transition-colors hover:text-foreground"
           >
             <Bell className="h-5 w-5" />
-            <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500" />
+            <span className="absolute top-1.5 right-1.5 flex h-2.5 w-2.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500"></span>
+            </span>
           </Button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
-                className="flex h-auto items-center gap-2 rounded-full p-1 pr-3 transition-colors hover:bg-slate-200/60 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary/50"
+                className="flex h-auto items-center gap-2 rounded-full p-1 pr-3 transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 aria-label="User Menu"
               >
                 <Avatar className="h-8 w-8">
                   {loadingUser ? (
-                    <div className="h-full w-full animate-pulse rounded-full bg-slate-200" />
+                    <Skeleton className="h-full w-full rounded-full" />
                   ) : (
-                    <AvatarFallback className="bg-blue-500 text-sm font-semibold text-white">
+                    <AvatarFallback className="bg-primary text-sm font-semibold text-primary-foreground">
                       {getInitials(user?.email)}
                     </AvatarFallback>
                   )}
                 </Avatar>
                 <div className="hidden text-left lg:block">
-                  <span className="block text-sm font-semibold text-slate-800">
-                    {!loadingUser && user ? user.email?.split('@')[0] : 'Admin'}
+                  <span className="block text-sm font-semibold text-foreground">
+                    {loadingUser ? 'Memuat...' : (user?.email?.split('@')[0] || 'Admin')}
                   </span>
                 </div>
               </Button>
@@ -154,12 +169,12 @@ export function Topbar({ sidebarOpen, setSidebarOpen }: TopbarProps) {
               <DropdownMenuLabel>
                 <p className="font-semibold">Akun Saya</p>
                 <p className="truncate text-xs font-normal text-muted-foreground">
-                  {loadingUser ? 'Memuat...' : user?.email || 'Tidak login'}
+                  {loadingUser ? 'Memuat email...' : user?.email || 'Tidak login'}
                 </p>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
-                <Link href="/settings">
+                <Link href="/dashboard/pengaturan">
                   <Settings className="mr-2 h-4 w-4" />
                   <span>Pengaturan</span>
                 </Link>
@@ -167,7 +182,7 @@ export function Topbar({ sidebarOpen, setSidebarOpen }: TopbarProps) {
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={handleLogout}
-                className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                className="text-destructive focus:text-destructive focus:bg-destructive/10"
                 disabled={loadingUser || !user}
               >
                 <LogOut className="mr-2 h-4 w-4" />

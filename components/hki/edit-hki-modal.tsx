@@ -1,8 +1,6 @@
-// components/hki/edit-hki-modal.tsx
 'use client'
 
-// ✅ PERBAIKAN: Tambahkan 'useMemo' ke dalam import
-import React, { useState, useCallback, memo, useMemo } from 'react'
+import React, { useState, useCallback, memo, useMemo, lazy, Suspense } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -11,13 +9,18 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { HKIForm } from '@/components/forms/hki-form'
 import { HKIEntry, FormOptions } from '@/lib/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { AlertCircle, PencilLine, Loader2 } from 'lucide-react'
 import { useHKIEntry } from '@/hooks/use-hki-entry'
+// 🐞 FIX: Tambahkan 'AnimatePresence' ke dalam import
+import { motion, AnimatePresence } from 'framer-motion'
+
+const HKIForm = lazy(() => 
+  import('@/components/forms/hki-form').then(module => ({ default: module.HKIForm }))
+);
 
 type EditModalFormOptions = Pick<FormOptions, 'jenisOptions' | 'statusOptions' | 'pengusulOptions' | 'kelasOptions'>;
 
@@ -33,9 +36,9 @@ interface EditHKIModalProps {
 const EDIT_FORM_ID = 'hki-edit-form'
 
 const FormSkeleton = memo(() => (
-  <div className="space-y-6 animate-pulse" aria-label="Loading form data">
+  <div className="space-y-6" aria-label="Loading form data">
     {[...Array(3)].map((_, i) => (
-      <div key={i} className="space-y-2">
+      <div key={i} className="space-y-4">
         <Skeleton className="h-4 w-1/4" />
         <Skeleton className="h-10 w-full" />
       </div>
@@ -86,79 +89,101 @@ export const EditHKIModal = memo(({
     }
   }, [isSubmitting, onClose])
   
-  const modalContent = useMemo(() => {
-    if (isLoading) return <FormSkeleton />
-    if (error) return <ErrorDisplay error={error} onRetry={refetch} />
+  const renderContent = () => {
+    if (isLoading) {
+      return <FormSkeleton />;
+    }
+    if (error) {
+      return <ErrorDisplay error={error} onRetry={refetch} />;
+    }
     if (data) {
       return (
-        <HKIForm
-          id={EDIT_FORM_ID}
-          mode="edit"
-          initialData={data}
-          jenisOptions={formOptions.jenisOptions}
-          statusOptions={formOptions.statusOptions}
-          pengusulOptions={formOptions.pengusulOptions}
-          kelasOptions={formOptions.kelasOptions}
-          onSubmittingChange={setIsSubmitting}
-          onSuccess={onSuccess}
-          onError={onError}
-        />
-      )
+        <Suspense fallback={<FormSkeleton />}>
+          <HKIForm
+            key={hkiId}
+            id={EDIT_FORM_ID}
+            mode="edit"
+            initialData={data}
+            jenisOptions={formOptions.jenisOptions}
+            statusOptions={formOptions.statusOptions}
+            pengusulOptions={formOptions.pengusulOptions}
+            kelasOptions={formOptions.kelasOptions}
+            onSubmittingChange={setIsSubmitting}
+            onSuccess={onSuccess}
+            onError={onError}
+          />
+        </Suspense>
+      );
     }
-    return null
-  }, [isLoading, error, data, refetch, formOptions, onSuccess, onError]);
+    return null;
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-4xl p-0 flex flex-col max-h-[90vh]">
-        <DialogHeader className="flex flex-row items-center gap-4 px-6 py-4 border-b">
-          <div className="bg-primary/10 p-2.5 rounded-lg">
-            <PencilLine className="h-6 w-6 text-primary" />
-          </div>
-          <div>
-            <DialogTitle className="text-xl font-semibold">
-              Edit Entri HKI
-            </DialogTitle>
-            <DialogDescription className="text-sm text-muted-foreground mt-1">
-              {isLoading
-                ? 'Memuat data...'
-                : data
-                  ? `Perbarui informasi untuk "${data.nama_hki}"`
-                  : 'Gagal memuat detail entri.'}
-            </DialogDescription>
-          </div>
-        </DialogHeader>
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, ease: 'easeOut' }}
+        >
+          <DialogHeader className="flex flex-row items-center gap-4 px-6 py-4 border-b">
+            <div className="bg-primary/10 p-2.5 rounded-lg">
+              <PencilLine className="h-6 w-6 text-primary" />
+            </div>
+            <div>
+              <DialogTitle className="text-xl font-semibold">
+                Edit Entri HKI
+              </DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground mt-1">
+                {isLoading
+                  ? 'Memuat data...'
+                  : data
+                    ? `Perbarui informasi untuk "${data.nama_hki}"`
+                    : error ? 'Gagal memuat detail entri.' : 'Pilih data untuk diedit.'}
+              </DialogDescription>
+            </div>
+          </DialogHeader>
+        </motion.div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-4">
-          {modalContent}
+        <div className="flex-1 overflow-y-auto px-6 py-4 min-h-[300px]">
+          {renderContent()}
         </div>
 
-        {!isLoading && !error && data && (
-          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 px-6 py-4 border-t bg-muted/40">
-            <Button
-              variant="outline"
-              onClick={handleClose}
-              disabled={isSubmitting}
+        <AnimatePresence>
+          {!isLoading && !error && data && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
             >
-              Batal
-            </Button>
-            <Button
-              type="submit"
-              form={EDIT_FORM_ID}
-              disabled={isSubmitting}
-              className="gap-2 w-full sm:w-auto"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Menyimpan...</span>
-                </>
-              ) : (
-                'Simpan Perubahan'
-              )}
-            </Button>
-          </DialogFooter>
-        )}
+              <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 px-6 py-4 border-t bg-muted/40">
+                <Button
+                  variant="outline"
+                  onClick={handleClose}
+                  disabled={isSubmitting}
+                >
+                  Batal
+                </Button>
+                <Button
+                  type="submit"
+                  form={EDIT_FORM_ID}
+                  disabled={isSubmitting}
+                  className="gap-2 w-full sm:w-auto"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Menyimpan...</span>
+                    </>
+                  ) : (
+                    'Simpan Perubahan'
+                  )}
+                </Button>
+              </DialogFooter>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </DialogContent>
     </Dialog>
   )
