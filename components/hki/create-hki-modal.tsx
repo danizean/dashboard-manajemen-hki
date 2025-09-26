@@ -18,9 +18,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 // ✨ OPTIMASI UTAMA: Gunakan dynamic import untuk HKIForm.
 // Kode untuk HKIForm baru akan di-download saat modal ini dibuka.
-const HKIForm = lazy(() => 
-  import('@/components/forms/hki-form').then(module => ({ default: module.HKIForm }))
-);
+const HKIForm = lazy(() =>
+  import('@/components/forms/hki-form').then((module) => ({
+    default: module.HKIForm,
+  }))
+)
 
 interface CreateHKIModalProps {
   isOpen: boolean
@@ -48,7 +50,7 @@ const FormSkeleton = () => (
       <Skeleton className="h-20 w-full" />
     </div>
   </div>
-);
+)
 
 export const CreateHKIModal = memo(
   ({
@@ -83,7 +85,8 @@ export const CreateHKIModal = memo(
                   Buat Entri HKI Baru
                 </DialogTitle>
                 <DialogDescription className="text-sm text-muted-foreground mt-1">
-                  Isi semua informasi yang diperlukan untuk membuat catatan HKI baru.
+                  Isi semua informasi yang diperlukan untuk membuat catatan HKI
+                  baru.
                 </DialogDescription>
               </div>
             </DialogHeader>

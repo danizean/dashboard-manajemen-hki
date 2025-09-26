@@ -26,8 +26,11 @@ export const dynamic = 'force-dynamic'
 const getUserProfile = cache(async () => {
   const cookieStore = cookies()
   const supabase = createClient(cookieStore)
-  
-  const { data: { user }, error: userError } = await supabase.auth.getUser()
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser()
   if (userError || !user) {
     // Jika tidak ada user, langsung redirect tanpa perlu proses lebih lanjut.
     redirect('/login')
@@ -38,12 +41,14 @@ const getUserProfile = cache(async () => {
     .select('role')
     .eq('id', user.id)
     .single()
-  
+
   if (profileError) {
     // Melempar error agar ditangkap oleh Error Boundary atau blok try-catch
-    throw new Error(`Kesalahan database saat mengambil profil: ${profileError.message}`)
+    throw new Error(
+      `Kesalahan database saat mengambil profil: ${profileError.message}`
+    )
   }
-  
+
   if (!profile) {
     throw new Error(`Profil untuk user ID ${user.id} tidak ditemukan.`)
   }
@@ -51,7 +56,12 @@ const getUserProfile = cache(async () => {
   return { user, profile }
 })
 
-const ErrorDisplay = ({ icon: Icon, title, description, details }: {
+const ErrorDisplay = ({
+  icon: Icon,
+  title,
+  description,
+  details,
+}: {
   icon: React.ElementType
   title: string
   description: string
@@ -59,7 +69,9 @@ const ErrorDisplay = ({ icon: Icon, title, description, details }: {
 }) => (
   <div className="flex flex-col items-center justify-center h-full min-h-[calc(100vh-200px)] text-center p-6 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
     <Icon className="h-16 w-16 text-red-500 mb-4" />
-    <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-200">{title}</h1>
+    <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-200">
+      {title}
+    </h1>
     <p className="text-muted-foreground mt-2 max-w-md">{description}</p>
     {details && (
       <pre className="mt-4 p-3 bg-gray-100 dark:bg-gray-800 text-xs text-red-600 dark:text-red-400 rounded-md overflow-x-auto w-full max-w-md">
@@ -69,7 +81,11 @@ const ErrorDisplay = ({ icon: Icon, title, description, details }: {
   </div>
 )
 
-export default async function DashboardLayout({ children }: { children: ReactNode }) {
+export default async function DashboardLayout({
+  children,
+}: {
+  children: ReactNode
+}) {
   try {
     const { profile } = await getUserProfile()
 
@@ -81,11 +97,10 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
     // Jika semua validasi lolos, render layout dengan children (halaman).
     return <AdminLayout>{children}</AdminLayout>
-
   } catch (error: any) {
     // Menangkap semua kemungkinan error dari `getUserProfile`
     // dan menampilkannya dengan UI yang sesuai.
-    let errorContent;
+    let errorContent
     if (error.message.includes('Akses_Ditolak')) {
       errorContent = (
         <ErrorDisplay
@@ -93,18 +108,18 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           title="Akses Ditolak"
           description="Anda tidak memiliki izin untuk mengakses halaman ini."
         />
-      );
+      )
     } else {
-       errorContent = (
+      errorContent = (
         <ErrorDisplay
           icon={ServerCrash}
           title="Terjadi Kesalahan"
           description="Gagal memuat sesi pengguna atau data profil."
           details={error.message}
         />
-      );
+      )
     }
     // Tetap bungkus error display dengan AdminLayout agar konsisten
-    return <AdminLayout>{errorContent}</AdminLayout>;
+    return <AdminLayout>{errorContent}</AdminLayout>
   }
 }

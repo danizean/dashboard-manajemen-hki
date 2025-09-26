@@ -1,3 +1,5 @@
+/* app/globals.css */
+/* IMPROVEMENT: Menambahkan keyframes untuk animasi skeleton shimmer. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -33,5 +35,27 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+/* Tambahan Animasi untuk Skeleton */
+@layer utilities {
+  @keyframes shimmer {
+    0%, 100% {
+      background-position: -100% 0;
+    }
+    50% {
+      background-position: 100% 0;
+    }
+  }
+
+  .animate-shimmer {
+    animation: shimmer 2s infinite linear;
+    background: linear-gradient(to right, 
+      hsl(var(--muted)) 25%, 
+      hsl(var(--muted) / 0.7) 50%, 
+      hsl(var(--muted)) 75%
+    );
+    background-size: 200% 100%;
   }
 }

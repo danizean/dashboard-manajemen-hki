@@ -53,7 +53,9 @@ export async function downloadFilteredExport({
           const errorData = await response.json().catch(() => ({
             error: `Gagal mengunduh file. Server merespons dengan status ${response.status}.`,
           }))
-          return reject(new Error(errorData.error || 'Terjadi kesalahan pada server.'))
+          return reject(
+            new Error(errorData.error || 'Terjadi kesalahan pada server.')
+          )
         }
 
         const blob = await response.blob()
@@ -61,7 +63,9 @@ export async function downloadFilteredExport({
         // ✅ PERBAIKAN: parsing Content-Disposition aman
         const disposition = response.headers.get('Content-Disposition') || ''
         let filename = `hki-export-${new Date().toISOString().split('T')[0]}.${format}`
-        const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+        const match = disposition.match(
+          /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/
+        )
         if (match && match[1]) {
           filename = match[1].replace(/['"]/g, '')
         }
@@ -70,7 +74,11 @@ export async function downloadFilteredExport({
         resolve()
       } catch (error) {
         console.error('Kesalahan pada layanan ekspor:', error)
-        reject(error instanceof Error ? error : new Error('Gagal mengunduh file karena masalah jaringan.'))
+        reject(
+          error instanceof Error
+            ? error
+            : new Error('Gagal mengunduh file karena masalah jaringan.')
+        )
       }
     })
 

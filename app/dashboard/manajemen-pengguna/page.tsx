@@ -34,42 +34,45 @@ const getUsersData = cache(async () => {
         persistSession: false,
       },
     }
-  );
+  )
 
   // Mengambil data pengguna dan profil secara paralel untuk efisiensi
   const [usersResult, profilesResult] = await Promise.all([
     supabaseAdmin.auth.admin.listUsers(),
-    supabaseAdmin.from('profiles').select('id, full_name, role')
-  ]);
+    supabaseAdmin.from('profiles').select('id, full_name, role'),
+  ])
 
-  const { data: { users }, error: usersError } = usersResult;
+  const {
+    data: { users },
+    error: usersError,
+  } = usersResult
   if (usersError) {
-    console.error('Gagal mengambil daftar pengguna:', usersError);
-    throw new Error(`Gagal mengambil daftar pengguna: ${usersError.message}`);
+    console.error('Gagal mengambil daftar pengguna:', usersError)
+    throw new Error(`Gagal mengambil daftar pengguna: ${usersError.message}`)
   }
 
-  const { data: profiles, error: profilesError } = profilesResult;
+  const { data: profiles, error: profilesError } = profilesResult
   if (profilesError) {
-    console.error('Gagal mengambil data profil:', profilesError);
-    throw new Error(`Gagal mengambil data profil: ${profilesError.message}`);
+    console.error('Gagal mengambil data profil:', profilesError)
+    throw new Error(`Gagal mengambil data profil: ${profilesError.message}`)
   }
 
   // ✅ Menggunakan Map untuk pencarian profil yang lebih cepat (O(1) vs O(n))
-  const profilesMap = new Map(profiles?.map(p => [p.id, p]));
+  const profilesMap = new Map(profiles?.map((p) => [p.id, p]))
 
   const combinedUsers: UserProfile[] = users.map((user) => {
-    const profile = profilesMap.get(user.id);
+    const profile = profilesMap.get(user.id)
     return {
       id: user.id,
       email: user.email,
       full_name: profile?.full_name ?? 'Nama Tidak Ditemukan',
       role: profile?.role === 'admin' ? 'admin' : 'user', // Memastikan tipe peran yang valid
       created_at: user.created_at, // Tidak perlu new Date() karena sudah string ISO
-    };
-  });
+    }
+  })
 
-  return combinedUsers;
-});
+  return combinedUsers
+})
 
 // ✅ Komponen untuk menampilkan error dengan UI yang konsisten
 const ErrorDisplay = ({ error }: { error: Error }) => (
@@ -77,7 +80,9 @@ const ErrorDisplay = ({ error }: { error: Error }) => (
     <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
       <AlertTriangle className="h-8 w-8 text-destructive" />
     </div>
-    <h3 className="mt-4 text-2xl font-semibold tracking-tight text-destructive">Gagal Memuat Data Pengguna</h3>
+    <h3 className="mt-4 text-2xl font-semibold tracking-tight text-destructive">
+      Gagal Memuat Data Pengguna
+    </h3>
     <p className="mt-2 text-sm text-muted-foreground">
       Terjadi kesalahan saat mencoba mengambil data dari server.
     </p>
@@ -85,32 +90,34 @@ const ErrorDisplay = ({ error }: { error: Error }) => (
       {error.message}
     </code>
   </div>
-);
+)
 
 export default async function UserManagementPage() {
-  const cookieStore = cookies();
-  const supabase = createClient(cookieStore);
+  const cookieStore = cookies()
+  const supabase = createClient(cookieStore)
 
   // ✅ Logika otentikasi dan otorisasi tetap sama, sudah sangat baik.
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) {
-    redirect('/login');
+    redirect('/login')
   }
 
   const { data: profile } = await supabase
     .from('profiles')
     .select('role')
     .eq('id', user.id)
-    .single();
+    .single()
 
   if (profile?.role !== 'admin') {
-    redirect('/dashboard?error=Akses_Ditolak');
+    redirect('/dashboard?error=Akses_Ditolak')
   }
 
-  const isSuperAdmin = user.email === process.env.SUPER_ADMIN_EMAIL;
+  const isSuperAdmin = user.email === process.env.SUPER_ADMIN_EMAIL
 
   try {
-    const usersData = await getUsersData();
+    const usersData = await getUsersData()
 
     return (
       <div className="space-y-6">
@@ -125,9 +132,9 @@ export default async function UserManagementPage() {
           currentUserIsSuperAdmin={isSuperAdmin}
         />
       </div>
-    );
+    )
   } catch (error) {
     // ✅ Menampilkan komponen ErrorDisplay yang lebih informatif
-    return <ErrorDisplay error={error as Error} />;
+    return <ErrorDisplay error={error as Error} />
   }
 }

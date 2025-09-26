@@ -11,7 +11,10 @@ export const dynamic = 'force-dynamic'
 // `z.coerce.number()` secara otomatis akan mengubah string dari params menjadi angka.
 const updateStatusSchema = z.object({
   id: z.coerce.number().int().positive('ID HKI harus berupa angka positif.'),
-  statusId: z.number({ required_error: 'ID Status wajib diisi.' }).int().positive('ID Status harus angka positif.'),
+  statusId: z
+    .number({ required_error: 'ID Status wajib diisi.' })
+    .int()
+    .positive('ID Status harus angka positif.'),
 })
 
 // ✅ OPTIMISASI: Helper untuk membuat respons error yang konsisten.
@@ -39,12 +42,18 @@ export async function PATCH(
     })
 
     if (!validationResult.success) {
-      return apiError('Input tidak valid.', 400, validationResult.error.flatten().fieldErrors)
+      return apiError(
+        'Input tidak valid.',
+        400,
+        validationResult.error.flatten().fieldErrors
+      )
     }
     const { id: hkiId, statusId } = validationResult.data
 
     // 2. Verifikasi Autentikasi dan Otorisasi Pengguna (Admin)
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     if (!user) {
       return apiError('Akses ditolak: Anda tidak terautentikasi.', 401)
     }
@@ -56,7 +65,10 @@ export async function PATCH(
       .single()
 
     if (profileError || profile?.role !== 'admin') {
-      return apiError('Akses ditolak: Hanya admin yang dapat mengubah status.', 403)
+      return apiError(
+        'Akses ditolak: Hanya admin yang dapat mengubah status.',
+        403
+      )
     }
 
     // 3. Jalankan Query UPDATE ke Database
@@ -79,14 +91,13 @@ export async function PATCH(
       }
       return apiError('Gagal memperbarui data di database.', 500)
     }
-    
+
     // 5. Kirim respons sukses
     return NextResponse.json({
       success: true,
       message: `Status berhasil diperbarui ke "${updatedData.status_hki?.nama_status || 'status baru'}"`,
       data: updatedData,
     })
-
   } catch (err) {
     // Tangani error parsing JSON atau kesalahan tak terduga lainnya
     console.error('[API HKI STATUS PATCH] Internal Server Error:', err)
