@@ -4,11 +4,10 @@ import { createClient } from '@/utils/supabase/server'
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { authorizeAdmin, AuthError } from '@/lib/auth/server' // ✅ Impor sekarang akan berhasil
 
 export const dynamic = 'force-dynamic'
 
-// ✅ OPTIMISASI: Skema validasi digabung untuk body dan parameter URL.
-// `z.coerce.number()` secara otomatis akan mengubah string dari params menjadi angka.
 const updateStatusSchema = z.object({
   id: z.coerce.number().int().positive('ID HKI harus berupa angka positif.'),
   statusId: z
@@ -17,24 +16,20 @@ const updateStatusSchema = z.object({
     .positive('ID Status harus angka positif.'),
 })
 
-// ✅ OPTIMISASI: Helper untuk membuat respons error yang konsisten.
 function apiError(message: string, status: number, errors?: object) {
   return NextResponse.json({ message, errors }, { status })
 }
 
-/**
- * Handler untuk memperbarui status entri HKI (PATCH).
- * Menerima ID HKI dari URL dan ID Status baru dari body request.
- */
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const cookieStore = cookies()
-  const supabase = createClient(cookieStore)
-
   try {
-    // 1. Ambil dan Validasi SEMUA input (body & params) sekaligus dengan Zod
+    const supabase = createClient(cookies())
+
+    // Otorisasi admin sekarang ditangani oleh satu fungsi helper.
+    await authorizeAdmin(supabase)
+
     const body = await request.json()
     const validationResult = updateStatusSchema.safeParse({
       id: params.id,
@@ -42,65 +37,42 @@ export async function PATCH(
     })
 
     if (!validationResult.success) {
-      return apiError(
-        'Input tidak valid.',
-        400,
-        validationResult.error.flatten().fieldErrors
-      )
+      return apiError('Input tidak valid.', 400, validationResult.error.flatten().fieldErrors)
     }
     const { id: hkiId, statusId } = validationResult.data
 
-    // 2. Verifikasi Autentikasi dan Otorisasi Pengguna (Admin)
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) {
-      return apiError('Akses ditolak: Anda tidak terautentikasi.', 401)
-    }
-
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || profile?.role !== 'admin') {
-      return apiError(
-        'Akses ditolak: Hanya admin yang dapat mengubah status.',
-        403
-      )
-    }
-
-    // 3. Jalankan Query UPDATE ke Database
     const { data: updatedData, error: updateError } = await supabase
       .from('hki')
       .update({
         id_status: statusId,
-        updated_at: new Date().toISOString(), // Selalu perbarui timestamp `updated_at`
+        updated_at: new Date().toISOString(),
       })
       .eq('id_hki', hkiId)
-      .select('id_hki, status_hki(nama_status)') // Kembalikan data baru untuk konfirmasi
+      .select('id_hki, status_hki(nama_status)')
       .single()
 
-    // 4. Tangani jika terjadi error saat query
     if (updateError) {
       console.error('Supabase PATCH Status Error:', updateError)
-      // Kode untuk 'no rows found' karena .single()
       if (updateError.code === 'PGRST116') {
         return apiError(`Data HKI dengan ID ${hkiId} tidak ditemukan.`, 404)
       }
       return apiError('Gagal memperbarui data di database.', 500)
     }
 
-    // 5. Kirim respons sukses
     return NextResponse.json({
       success: true,
       message: `Status berhasil diperbarui ke "${updatedData.status_hki?.nama_status || 'status baru'}"`,
       data: updatedData,
     })
-  } catch (err) {
-    // Tangani error parsing JSON atau kesalahan tak terduga lainnya
-    console.error('[API HKI STATUS PATCH] Internal Server Error:', err)
+  } catch (err: any) {
+    console.error('[API HKI STATUS PATCH] Error:', err)
+    if (err instanceof AuthError) {
+      // Menangkap error spesifik dari helper otorisasi
+      return apiError(err.message, err.message.includes('terautentikasi') ? 401 : 403)
+    }
+    if (err instanceof z.ZodError) {
+      return apiError('Input tidak valid.', 400, err.flatten().fieldErrors)
+    }
     if (err instanceof SyntaxError) {
       return apiError('Request body tidak valid (bukan JSON).', 400)
     }
