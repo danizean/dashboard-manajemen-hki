@@ -8,8 +8,7 @@ import { Database } from '@/lib/database.types'
 import { cache } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-// Next.js akan mencoba meregenerasi halaman ini setiap jam (3600 detik).
-// Ini adalah strategi caching yang baik untuk data master yang jarang berubah.
+// Data master jarang berubah, caching selama 1 jam adalah strategi yang baik.
 export const revalidate = 3600
 
 // Definisikan tipe eksplisit untuk data mentah dari RPC untuk type safety maksimal.
@@ -17,40 +16,48 @@ type PengusulOptionRaw = { id_pengusul: number; nama_opd: string }
 type KelasOptionRaw = { id_kelas: number; nama_kelas: string; tipe: string }
 
 /**
- * Mengambil semua opsi (untuk filter dan form) dalam satu panggilan RPC.
+ * Mengambil semua opsi (untuk filter dan form) dalam satu panggilan.
  * Dibungkus dengan React `cache` untuk memastikan fungsi ini hanya dieksekusi
- * sekali per-request, bahkan jika dipanggil dari beberapa komponen server.
- * Ini adalah optimasi performa kunci di Next.js App Router.
- *
- * @param supabase - Instance Supabase client.
- * @returns {Promise<FormOptions>} Objek berisi semua data opsi yang dibutuhkan.
+ * sekali per-request.
  */
 const getFormOptions = cache(
   async (supabase: SupabaseClient<Database>): Promise<FormOptions> => {
-    const { data, error } = await supabase.rpc('get_all_form_options')
+    // Ambil semua data secara paralel untuk efisiensi
+    const [
+      jenisRes,
+      statusRes,
+      tahunRes,
+      pengusulRes,
+      kelasRes,
+    ] = await Promise.all([
+      supabase.from('jenis_hki').select('*').order('nama_jenis_hki'),
+      supabase.from('status_hki').select('*').order('id_status'),
+      supabase.rpc('get_distinct_hki_years'),
+      supabase.from('pengusul').select('id_pengusul, nama_opd').order('nama_opd'),
+      supabase.from('kelas_hki').select('id_kelas, nama_kelas, tipe').order('id_kelas'),
+    ])
 
-    if (error) {
-      console.error('Gagal memuat form options via RPC:', error.message)
-      // Melempar error agar bisa ditangkap oleh Error Boundary atau block try-catch di bawah.
-      throw new Error(`Gagal mengambil data prasyarat form: ${error.message}`)
-    }
+    // Lakukan pengecekan error untuk setiap query
+    if (jenisRes.error) throw new Error(`Gagal mengambil Jenis HKI: ${jenisRes.error.message}`);
+    if (statusRes.error) throw new Error(`Gagal mengambil Status HKI: ${statusRes.error.message}`);
+    if (tahunRes.error) throw new Error(`Gagal mengambil Tahun HKI: ${tahunRes.error.message}`);
+    if (pengusulRes.error) throw new Error(`Gagal mengambil Pengusul: ${pengusulRes.error.message}`);
+    if (kelasRes.error) throw new Error(`Gagal mengambil Kelas HKI: ${kelasRes.error.message}`);
 
-    if (!data) {
-      throw new Error('RPC "get_all_form_options" tidak mengembalikan data.')
-    }
-
-    // Transformasi data mentah dari database menjadi format yang siap pakai untuk komponen UI.
+    // Transformasi data mentah menjadi format yang siap pakai untuk komponen UI.
     return {
-      jenisOptions: data.jenis_options || [],
-      statusOptions: data.status_options || [],
-      tahunOptions: data.tahun_options || [],
+      jenisOptions: jenisRes.data || [],
+      statusOptions: statusRes.data || [],
+      // --- PERBAIKAN: Ubah nama properti dari 'tahun_fasilitasi' menjadi 'tahun' ---
+      tahunOptions:
+        tahunRes.data?.map((y) => ({ tahun: y.tahun_fasilitasi })) || [],
       pengusulOptions:
-        data.pengusul_options?.map((p: PengusulOptionRaw) => ({
+        pengusulRes.data?.map((p: PengusulOptionRaw) => ({
           value: String(p.id_pengusul),
           label: p.nama_opd,
         })) || [],
       kelasOptions:
-        data.kelas_options?.map((k: KelasOptionRaw) => ({
+        kelasRes.data?.map((k: KelasOptionRaw) => ({
           value: String(k.id_kelas),
           label: `${k.id_kelas} – ${k.nama_kelas} (${k.tipe})`,
         })) || [],
@@ -60,8 +67,6 @@ const getFormOptions = cache(
 
 /**
  * Komponen Halaman (React Server Component).
- * Bertugas untuk melakukan data fetching di sisi server dan meneruskannya
- * ke komponen klien yang akan menangani semua interaktivitas.
  */
 export default async function HKIPage() {
   const cookieStore = cookies()
@@ -89,6 +94,5 @@ export default async function HKIPage() {
   }
 
   // Me-render komponen klien dan meneruskan data sebagai props.
-  // Komponen klien akan menangani semua state, interaksi, dan fetching data dinamis.
   return <HKIClientPage formOptions={formOptions} error={pageError} />
 }
