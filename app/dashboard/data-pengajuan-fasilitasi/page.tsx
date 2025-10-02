@@ -1,5 +1,4 @@
 // app/dashboard/data-pengajuan-fasilitasi/page.tsx
-
 import { createClient } from '@/utils/supabase/server'
 import { HKIClientPage } from './hki-client-page'
 import { cookies } from 'next/headers'
@@ -49,6 +48,7 @@ const getFormOptions = cache(
       jenisOptions: jenisRes.data || [],
       statusOptions: statusRes.data || [],
       // --- PERBAIKAN: Ubah nama properti dari 'tahun_fasilitasi' menjadi 'tahun' ---
+      // Ini akan menyelesaikan error TypeScript dan error build di Vercel.
       tahunOptions:
         tahunRes.data?.map((y) => ({ tahun: y.tahun_fasilitasi })) || [],
       pengusulOptions:
