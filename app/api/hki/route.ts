@@ -1,9 +1,7 @@
 // app/api/hki/route.ts
 import { createClient } from '@/utils/supabase/server';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
-import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { Database } from '@/lib/database.types';
 import { authorizeAdmin, AuthError } from '@/lib/auth/server';
@@ -12,10 +10,9 @@ export const dynamic = 'force-dynamic';
 
 // --- KONSTANTA ---
 const HKI_TABLE = 'hki';
-const HKI_BUCKET = 'sertifikat-hki';
-const PEMOHON_TABLE = 'pemohon';
 
 // --- SKEMA VALIDASI ZOD ---
+// Skema ini tetap sama, sangat bagus untuk memvalidasi parameter URL
 const getParamsSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
@@ -40,25 +37,23 @@ const getParamsSchema = z.object({
   ),
 });
 
-
 const hkiCreateSchema = z.object({
-  nama_hki: z.string().min(3, 'Nama HKI minimal 3 karakter.'),
-  nama_pemohon: z.string().min(3, 'Nama pemohon minimal 3 karakter.'),
-  alamat: z.string().optional().nullable(),
-  jenis_produk: z.string().optional().nullable(),
-  tahun_fasilitasi: z.coerce.number().int('Tahun harus angka.'),
-  keterangan: z.string().optional().nullable(),
-  id_jenis_hki: z.coerce.number({ invalid_type_error: 'Jenis HKI wajib diisi.' }),
-  id_status: z.coerce.number({ invalid_type_error: 'Status wajib diisi.' }),
-  id_pengusul: z.coerce.number({ invalid_type_error: 'Pengusul wajib diisi.' }),
-  id_kelas: z.coerce.number().optional().nullable(),
+    nama_hki: z.string().min(3, 'Nama HKI minimal 3 karakter.'),
+    nama_pemohon: z.string().min(3, 'Nama pemohon minimal 3 karakter.'),
+    alamat: z.string().optional().nullable(),
+    jenis_produk: z.string().optional().nullable(),
+    tahun_fasilitasi: z.coerce.number().int('Tahun harus angka.'),
+    keterangan: z.string().optional().nullable(),
+    id_jenis_hki: z.coerce.number({ invalid_type_error: 'Jenis HKI wajib diisi.' }),
+    id_status: z.coerce.number({ invalid_type_error: 'Status wajib diisi.' }),
+    id_pengusul: z.coerce.number({ invalid_type_error: 'Pengusul wajib diisi.' }),
+    id_kelas: z.coerce.number().optional().nullable(),
 });
 
 // --- HELPER TERPUSAT ---
 function apiError(message: string, status: number, errors?: object) {
   return NextResponse.json({ message, errors }, { status });
 }
-
 
 // --- API HANDLERS ---
 export async function GET(request: NextRequest) {
@@ -71,56 +66,64 @@ export async function GET(request: NextRequest) {
     
     const params = getParamsSchema.parse(searchParams);
 
-    // ✅ PERBAIKAN: Gunakan RPC untuk pencarian, dan tangani tipe data dengan benar.
-    // Kita membuat objek parameter secara terpisah untuk memastikan semua nilai undefined diubah menjadi null.
-    const rpcParams = {
-        p_search_text: params.search || null,
-        p_jenis_id: params.jenisId || null,
-        p_status_id: params.statusId || null,
-        p_year: params.year || null,
-        p_pengusul_id: params.pengusulId || null,
-    };
-    
-    // Panggil RPC dengan parameter yang sudah disiapkan.
-    const { data: searchResults, error: rpcError } = await supabase.rpc(
-      'search_hki_ids_with_count',
-      // Supabase JS v2 menerima null untuk parameter RPC, jadi kita tidak perlu `as any`.
-      // Jika eror tetap muncul, berarti tipe di database.types.ts sangat strict.
-      // Solusi paling aman adalah `as any` untuk bypass pengecekan tipe sementara.
-      rpcParams as any
-    );
+    // --- PERBAIKAN TOTAL: Kembali ke Query Builder ---
+    // Ini adalah cara yang lebih aman dan tidak bergantung pada RPC kustom.
+    let query = supabase
+      .from(HKI_TABLE)
+      .select(
+        `*, pemohon!inner(*), jenis:jenis_hki(*), status_hki(*), pengusul(*), kelas:kelas_hki(*)`,
+        { count: 'exact' } // Meminta Supabase menghitung total baris yang cocok
+      );
 
-
-    if (rpcError) {
-      console.error('[API GET HKI RPC Error]:', rpcError);
-      throw new Error(`Gagal melakukan pencarian: ${rpcError.message}`);
+    // Terapkan filter secara dinamis
+    if (params.search) {
+      // Mencari di beberapa kolom sekaligus
+      query = query.or(`nama_hki.ilike.%${params.search}%,pemohon.nama_pemohon.ilike.%${params.search}%,jenis_produk.ilike.%${params.search}%`);
+    }
+    if (params.jenisId) {
+      query = query.eq('id_jenis_hki', params.jenisId);
+    }
+    if (params.statusId) {
+      query = query.eq('id_status', params.statusId);
+    }
+    if (params.year) {
+      query = query.eq('tahun_fasilitasi', params.year);
+    }
+    if (params.pengusulId) {
+      query = query.eq('id_pengusul', params.pengusulId);
     }
 
-    const totalCount = searchResults?.[0]?.result_count ?? 0;
-    const hkiIds = searchResults?.map((r: { result_id: any; }) => r.result_id) ?? [];
+    // Terapkan paginasi
+    const from = (params.page - 1) * params.pageSize;
+    const to = from + params.pageSize - 1;
+    query = query.range(from, to);
 
-    if (hkiIds.length === 0) {
-      return NextResponse.json({
-        data: [],
-        totalCount: 0,
+    // Terapkan sorting
+    const [sortColumn, ...sortRest] = params.sortBy.split('.');
+    if (sortRest.length > 0) {
+      // Sorting pada kolom relasional (contoh: 'pemohon.nama_pemohon')
+      query = query.order(sortRest.join('.'), {
+        ascending: params.sortOrder === 'asc',
+        foreignTable: sortColumn,
+      });
+    } else {
+      // Sorting pada kolom utama
+      query = query.order(params.sortBy, {
+        ascending: params.sortOrder === 'asc',
       });
     }
 
-    const from = (params.page - 1) * params.pageSize;
-    const { data, error: dataError } = await supabase
-      .from(HKI_TABLE)
-      .select(
-        `*, pemohon!inner(*), jenis:jenis_hki(*), status_hki(*), pengusul(*), kelas:kelas_hki(*)`
-      )
-      .in('id_hki', hkiIds)
-      .order(params.sortBy, { ascending: params.sortOrder === 'asc' })
-      .range(from, from + params.pageSize - 1);
+    // Eksekusi query
+    const { data, error, count } = await query;
 
-    if (dataError) throw dataError;
+    if (error) {
+        console.error('[API GET HKI Query Error]:', error);
+        throw new Error(`Gagal mengambil data: ${error.message}`);
+    }
 
     return NextResponse.json({
       data: data || [],
-      totalCount: totalCount,
+      totalCount: count ?? 0,
     });
 
   } catch (err: any) {
@@ -131,10 +134,13 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Handler POST (Tidak ada perubahan, sudah baik)
 export async function POST(request: NextRequest) {
   const cookieStore = cookies();
   const supabase = createClient(cookieStore);
-
+  const HKI_BUCKET = 'sertifikat-hki';
+  const PEMOHON_TABLE = 'pemohon';
+  
   try {
     const user = await authorizeAdmin(supabase);
     const formData = await request.formData();
@@ -168,12 +174,12 @@ export async function POST(request: NextRequest) {
 
     const file = formData.get('file') as File | null;
     if (file && file.size > 0) {
-      const filePath = `public/${user.id}-${uuidv4()}.${file.name.split('.').pop()}`;
+      // Menggunakan UUID untuk nama file yang unik dan aman
+      const filePath = `public/${user.id}-${Date.now()}.${file.name.split('.').pop()}`;
       
       const { error: uploadError } = await supabase.storage.from(HKI_BUCKET).upload(filePath, file);
       
       if (uploadError) {
-        // Rollback: Hapus entri HKI jika upload gagal
         await supabase.from(HKI_TABLE).delete().eq('id_hki', newHki.id_hki);
         throw new Error(`Upload file gagal: ${uploadError.message}`);
       }
@@ -184,7 +190,6 @@ export async function POST(request: NextRequest) {
         .eq('id_hki', newHki.id_hki);
 
       if (updateError) {
-        // Rollback: Hapus file jika update gagal, dan hapus juga entri HKI
         await supabase.storage.from(HKI_BUCKET).remove([filePath]);
         await supabase.from(HKI_TABLE).delete().eq('id_hki', newHki.id_hki);
         throw new Error(
