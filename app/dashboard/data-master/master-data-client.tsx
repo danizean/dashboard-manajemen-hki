@@ -1,10 +1,8 @@
-// app/dashboard/data-master/master-data-client.tsx
 'use client'
 
-// --- PERBAIKAN: Mengimpor 'memo' dari React ---
 import React, { memo } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { MasterCrudTable } from './master-crud-components'
+import { MasterCrudComponent } from './master-crud-components'
 import { JenisHKI, KelasHKI, Pengusul } from '@/lib/types'
 import { Copyright, Building, FileText } from 'lucide-react'
 
@@ -54,7 +52,6 @@ interface MasterDataClientProps {
   initialPengusul: Pengusul[]
 }
 
-// --- PERBAIKAN: Membungkus komponen dengan React.memo ---
 export const MasterDataClient = memo(function MasterDataClient({
   initialJenis,
   initialKelas,
@@ -62,20 +59,21 @@ export const MasterDataClient = memo(function MasterDataClient({
 }: MasterDataClientProps) {
   return (
     <Tabs defaultValue="jenis_hki" className="w-full">
-      <TabsList className="grid w-full grid-cols-3 h-12">
-        <TabsTrigger value="jenis_hki" className="gap-2 text-base md:text-sm">
+      {/* --- PERBAIKAN: Menghapus 'grid' & 'grid-cols-3', menggunakan Flexbox --- */}
+      <TabsList className="w-full h-12">
+        <TabsTrigger value="jenis_hki" className="flex-1 gap-2 text-base md:text-sm">
           <Copyright className="h-4 w-4" /> Jenis HKI
         </TabsTrigger>
-        <TabsTrigger value="kelas_hki" className="gap-2 text-base md:text-sm">
+        <TabsTrigger value="kelas_hki" className="flex-1 gap-2 text-base md:text-sm">
           <FileText className="h-4 w-4" /> Kelas HKI
         </TabsTrigger>
-        <TabsTrigger value="pengusul" className="gap-2 text-base md:text-sm">
+        <TabsTrigger value="pengusul" className="flex-1 gap-2 text-base md:text-sm">
           <Building className="h-4 w-4" /> Pengusul (OPD)
         </TabsTrigger>
       </TabsList>
 
       <TabsContent value="jenis_hki" className="mt-4">
-        <MasterCrudTable
+        <MasterCrudComponent
           dataType="jenis_hki"
           data={initialJenis}
           config={masterConfig.jenis_hki}
@@ -83,7 +81,7 @@ export const MasterDataClient = memo(function MasterDataClient({
       </TabsContent>
 
       <TabsContent value="kelas_hki" className="mt-4">
-        <MasterCrudTable
+        <MasterCrudComponent
           dataType="kelas_hki"
           data={initialKelas}
           config={masterConfig.kelas_hki}
@@ -91,7 +89,7 @@ export const MasterDataClient = memo(function MasterDataClient({
       </TabsContent>
 
       <TabsContent value="pengusul" className="mt-4">
-        <MasterCrudTable
+        <MasterCrudComponent
           dataType="pengusul"
           data={initialPengusul}
           config={masterConfig.pengusul}

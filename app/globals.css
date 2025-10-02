@@ -1,5 +1,4 @@
 /* app/globals.css */
-/* IMPROVEMENT: Menambahkan keyframes untuk animasi skeleton shimmer. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -26,6 +25,42 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
     --radius: 0.5rem;
+    
+    /* ✅ PERBAIKAN: Menambahkan variabel warna untuk chart (Light Mode) */
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 40 70% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 0 70% 60%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+
+    /* ✅ PERBAIKAN: Menambahkan variabel warna untuk chart (Dark Mode) */
+    --chart-1: 210 70% 60%;
+    --chart-2: 160 60% 55%;
+    --chart-3: 40 70% 65%;
+    --chart-4: 280 65% 70%;
+    --chart-5: 0 70% 70%;
   }
 }
 
@@ -38,24 +73,13 @@
   }
 }
 
-/* Tambahan Animasi untuk Skeleton */
 @layer utilities {
-  @keyframes shimmer {
-    0%, 100% {
-      background-position: -100% 0;
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
     }
-    50% {
-      background-position: 100% 0;
+    to {
+      transform: rotate(360deg);
     }
-  }
-
-  .animate-shimmer {
-    animation: shimmer 2s infinite linear;
-    background: linear-gradient(to right, 
-      hsl(var(--muted)) 25%, 
-      hsl(var(--muted) / 0.7) 50%, 
-      hsl(var(--muted)) 75%
-    );
-    background-size: 200% 100%;
   }
 }

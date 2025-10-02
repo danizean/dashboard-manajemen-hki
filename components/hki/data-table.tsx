@@ -167,7 +167,8 @@ function useDataTable(totalCount: number) {
     Object.entries(state).forEach(([key, value]) => {
       const defaultValue = DEFAULTS[key as keyof typeof DEFAULTS] ?? ''
       if (
-        value &&
+        value !== null &&
+        value !== undefined &&
         String(value).length > 0 &&
         String(value) !== String(defaultValue)
       ) {
@@ -606,8 +607,8 @@ const DataTableRow = memo(
     )
 
     const statusStyle = useMemo(
-      () => getStatusStyle(entry.status_hki?.nama_status),
-      [entry.status_hki?.nama_status]
+      () => getStatusStyle(entry?.status_hki?.nama_status),
+      [entry?.status_hki?.nama_status]
     )
 
     return (
@@ -1193,6 +1194,32 @@ export function DataTable({
     setDeleteAlert({ open: true, isBulk: true })
   }, [tableState.selectedRows])
 
+  // --- OPTIMISASI 1: Buat callback yang stabil untuk memilih satu baris ---
+  // Fungsi ini tidak akan dibuat ulang di setiap render, sehingga `DataTableRow` tidak ikut re-render saat baris lain dipilih.
+  const handleSelectRow = useCallback((id: number, checked: boolean) => {
+      tableState.setSelectedRows(prevRows => {
+          const newRows = new Set(prevRows)
+          if (checked) {
+              newRows.add(id)
+          } else {
+              newRows.delete(id)
+          }
+          return newRows
+      })
+  }, [tableState.setSelectedRows])
+
+  // --- OPTIMISASI 2: Buat callback yang stabil untuk memilih semua baris ---
+  // Sama seperti di atas, ini mencegah re-render yang tidak perlu pada komponen header.
+  const handleSelectAll = useCallback((checked: boolean) => {
+      if (checked) {
+          const allRowIds = new Set(data.map(row => row.id_hki))
+          tableState.setSelectedRows(allRowIds)
+      } else {
+          tableState.setSelectedRows(new Set())
+      }
+  }, [data, tableState.setSelectedRows])
+
+
   const showCheckboxColumn = selectionModeActive
   const columnsCount = 9 + (showCheckboxColumn ? 1 : 0)
 
@@ -1220,15 +1247,8 @@ export function DataTable({
                         data.length > 0 &&
                         tableState.selectedRows.size === data.length
                       }
-                      onCheckedChange={(checked) => {
-                        const newRows = new Set<number>()
-                        if (checked) {
-                          data.forEach((row: HKIEntry) =>
-                            newRows.add(row.id_hki)
-                          )
-                        } // <-- FIX: Tipe eksplisit
-                        tableState.setSelectedRows(newRows)
-                      }}
+                      // --- OPTIMISASI: Gunakan callback yang stabil ---
+                      onCheckedChange={handleSelectAll}
                       aria-label="Pilih semua baris"
                       disabled={isLoading || data.length === 0}
                     />
@@ -1298,7 +1318,7 @@ export function DataTable({
                 data.map(
                   (
                     entry: HKIEntry,
-                    index: number // <-- FIX: Tipe eksplisit
+                    index: number
                   ) => (
                     <DataTableRow
                       key={entry.id_hki}
@@ -1306,11 +1326,8 @@ export function DataTable({
                       index={index}
                       pagination={tableState.pagination}
                       isSelected={tableState.selectedRows.has(entry.id_hki)}
-                      onSelectRow={(id, checked) => {
-                        const newRows = new Set(tableState.selectedRows)
-                        checked ? newRows.add(id) : newRows.delete(id)
-                        tableState.setSelectedRows(newRows)
-                      }}
+                      // --- OPTIMISASI: Gunakan callback yang stabil ---
+                      onSelectRow={handleSelectRow}
                       onEdit={onEdit}
                       onDelete={handleDeleteSingle}
                       onViewDetails={onViewDetails}

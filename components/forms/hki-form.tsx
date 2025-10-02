@@ -1,6 +1,5 @@
 'use client'
 
-// ✨ OPTIMASI: Tambahkan import 'lazy' dan 'Suspense' dari React
 import React, {
   useState,
   useMemo,
@@ -10,7 +9,7 @@ import React, {
   lazy,
   Suspense,
 } from 'react'
-import { useForm, useWatch, FieldErrors } from 'react-hook-form'
+import { useForm, useWatch, FieldErrors, Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { toast } from 'sonner'
@@ -36,21 +35,20 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+// --- PERBAIKAN: Impor komponen Button ---
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton' // Asumsi Skeleton sudah ada dari shadcn/ui
+import { Skeleton } from '@/components/ui/skeleton'
 import { HKIEntry, JenisHKI, StatusHKI } from '@/lib/types'
 import { FileText, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-// ✨ OPTIMASI: Dynamic import untuk komponen Combobox yang lebih berat.
-// Kode untuk Combobox tidak akan masuk ke bundle awal, tapi di-load saat dibutuhkan.
 const LazyCombobox = lazy(() =>
   import('@/components/ui/combobox').then((module) => ({
     default: module.Combobox,
   }))
 )
 
-// --- Skema dan Tipe Data (Tidak ada perubahan) ---
+// --- Skema dan Tipe Data ---
 const MAX_FILE_SIZE_MB = 5
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 const ACCEPTED_FILE_TYPES = ['application/pdf']
@@ -124,9 +122,22 @@ interface HKIFormProps {
   onError?: (message: string) => void
 }
 
-// --- Komponen Anak (FileUploader) tidak berubah signifikan ---
+interface FileUploaderProps {
+  control: Control<HKIFormData>
+  formId: string
+  isSubmitting: boolean
+  initialPdf: string | null | undefined
+  onRemoveExisting: () => void
+}
+
 const FileUploader = memo(
-  ({ control, formId, isSubmitting, initialPdf, onRemoveExisting }: any) => {
+  ({
+    control,
+    formId,
+    isSubmitting,
+    initialPdf,
+    onRemoveExisting,
+  }: FileUploaderProps) => {
     const [isDragging, setIsDragging] = useState(false)
     const selectedFile = useWatch({ control, name: 'sertifikat_pdf' })
     const showExistingFile = !!initialPdf && !selectedFile?.[0]
@@ -222,7 +233,7 @@ const FileUploader = memo(
 )
 FileUploader.displayName = 'FileUploader'
 
-// --- Komponen Utama yang Dioptimasi ---
+// --- Komponen Utama ---
 export const HKIForm = memo(
   ({ id, initialData, mode, ...props }: HKIFormProps) => {
     const {
@@ -269,13 +280,11 @@ export const HKIForm = memo(
       onSubmittingChange(isSubmitting)
     }, [isSubmitting, onSubmittingChange])
 
-    // ✨ OPTIMASI: Mengawasi perubahan `id_jenis_hki` untuk menampilkan field `id_kelas` secara dinamis.
     const selectedJenisId = useWatch({ control, name: 'id_jenis_hki' })
     const showKelasField = useMemo(() => {
       const selectedJenis = jenisOptions.find(
         (opt) => String(opt.id_jenis_hki) === selectedJenisId
       )
-      // Asumsi 'Merek' adalah jenis yang memerlukan field kelas
       return selectedJenis?.nama_jenis_hki === 'Merek'
     }, [selectedJenisId, jenisOptions])
 
@@ -289,15 +298,20 @@ export const HKIForm = memo(
 
     const onSubmit = useCallback(
       async (data: HKIFormData) => {
-        // ... Logika fetch Anda tetap sama ...
         const actionText = mode === 'create' ? 'membuat' : 'memperbarui'
         const toastId = toast.loading(`Sedang ${actionText} entri HKI...`)
+
         try {
           const formData = new FormData()
           const file = data.sertifikat_pdf?.[0]
-          if (file instanceof File) formData.append('file', file)
-          if (mode === 'edit' && isDeletingFile)
+          if (file instanceof File) {
+            formData.append('file', file)
+          }
+
+          if (mode === 'edit' && isDeletingFile) {
             formData.append('delete_sertifikat', 'true')
+          }
+
           Object.entries(data).forEach(([key, value]) => {
             if (
               key !== 'sertifikat_pdf' &&
@@ -307,23 +321,27 @@ export const HKIForm = memo(
               formData.append(key, String(value))
             }
           })
+
           const url =
             mode === 'create' ? '/api/hki' : `/api/hki/${initialData?.id_hki}`
           const method = mode === 'create' ? 'POST' : 'PATCH'
+
           const response = await fetch(url, { method, body: formData })
           const result = await response.json()
-          if (!response.ok)
+
+          if (!response.ok) {
             throw new Error(result.message || `Gagal ${actionText} data.`)
-          toast.success(`Data HKI berhasil di${actionText}!`, {
-            id: toastId,
-            description: `Entri untuk "${data.nama_hki}" telah disimpan.`,
-          })
+          }
+          
+          toast.dismiss(toastId)
           onSuccess?.(result.data)
+
         } catch (err: unknown) {
           const errorMessage =
             err instanceof Error
               ? err.message
               : `Terjadi kesalahan saat ${actionText} data.`
+
           toast.error(errorMessage, {
             id: toastId,
             description:
@@ -354,7 +372,6 @@ export const HKIForm = memo(
       form.setValue('sertifikat_pdf', undefined, { shouldValidate: true })
     }, [form])
 
-    // Fallback UI untuk Suspense saat Combobox dimuat
     const ComboboxFallback = <Skeleton className="h-10 w-full" />
 
     return (
@@ -567,7 +584,6 @@ export const HKIForm = memo(
                   )}
                 />
 
-                {/* ✨ OPTIMASI: Field Kelas HKI hanya di-render jika dibutuhkan */}
                 {showKelasField && (
                   <FormField
                     name="id_kelas"

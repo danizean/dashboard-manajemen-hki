@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { Database } from '@/lib/database.types';
-import { authorizeAdmin, AuthError } from '@/lib/auth/server'; // ✅ Perbaikan: Impor helper otorisasi yang sudah ada
+import { authorizeAdmin, AuthError } from '@/lib/auth/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,18 +15,31 @@ const HKI_TABLE = 'hki';
 const HKI_BUCKET = 'sertifikat-hki';
 const PEMOHON_TABLE = 'pemohon';
 
-// --- SKEMA VALIDASI ZOD (Tidak ada perubahan, sudah baik) ---
+// --- SKEMA VALIDASI ZOD ---
 const getParamsSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
   sortBy: z.string().default('created_at'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
   search: z.string().optional(),
-  jenisId: z.coerce.number().optional(),
-  statusId: z.coerce.number().optional(),
-  year: z.coerce.number().optional(),
-  pengusulId: z.coerce.number().optional(),
+  jenisId: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined ? undefined : Number(val)),
+    z.number().optional()
+  ),
+  statusId: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined ? undefined : Number(val)),
+    z.number().optional()
+  ),
+  year: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined ? undefined : Number(val)),
+    z.number().optional()
+  ),
+  pengusulId: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined ? undefined : Number(val)),
+    z.number().optional()
+  ),
 });
+
 
 const hkiCreateSchema = z.object({
   nama_hki: z.string().min(3, 'Nama HKI minimal 3 karakter.'),
@@ -55,40 +68,59 @@ export async function GET(request: NextRequest) {
   try {
     await authorizeAdmin(supabase);
     const searchParams = Object.fromEntries(request.nextUrl.searchParams);
+    
     const params = getParamsSchema.parse(searchParams);
 
-    let query = supabase
-      .from(HKI_TABLE)
-      .select(
-        `*, pemohon!inner(*), jenis:jenis_hki(*), status_hki(*), pengusul(*), kelas:kelas_hki(*)`,
-        { count: 'exact' }
-      );
-
-    // ✅ Perbaikan: Logika pencarian yang tidak efisien (N+1) diganti dengan satu query .or() yang memanfaatkan relasi.
-    if (params.search) {
-      const searchTerm = `%${params.search}%`;
-      query = query.or(
-        `nama_hki.ilike.${searchTerm},pemohon.nama_pemohon.ilike.${searchTerm}`
-      );
-    }
+    // ✅ PERBAIKAN: Gunakan RPC untuk pencarian, dan tangani tipe data dengan benar.
+    // Kita membuat objek parameter secara terpisah untuk memastikan semua nilai undefined diubah menjadi null.
+    const rpcParams = {
+        p_search_text: params.search || null,
+        p_jenis_id: params.jenisId || null,
+        p_status_id: params.statusId || null,
+        p_year: params.year || null,
+        p_pengusul_id: params.pengusulId || null,
+    };
     
-    // Filter lainnya (tidak berubah)
-    if (params.jenisId) query = query.eq('id_jenis_hki', params.jenisId);
-    if (params.statusId) query = query.eq('id_status', params.statusId);
-    if (params.year) query = query.eq('tahun_fasilitasi', params.year);
-    if (params.pengusulId) query = query.eq('id_pengusul', params.pengusulId);
+    // Panggil RPC dengan parameter yang sudah disiapkan.
+    const { data: searchResults, error: rpcError } = await supabase.rpc(
+      'search_hki_ids_with_count',
+      // Supabase JS v2 menerima null untuk parameter RPC, jadi kita tidak perlu `as any`.
+      // Jika eror tetap muncul, berarti tipe di database.types.ts sangat strict.
+      // Solusi paling aman adalah `as any` untuk bypass pengecekan tipe sementara.
+      rpcParams as any
+    );
+
+
+    if (rpcError) {
+      console.error('[API GET HKI RPC Error]:', rpcError);
+      throw new Error(`Gagal melakukan pencarian: ${rpcError.message}`);
+    }
+
+    const totalCount = searchResults?.[0]?.result_count ?? 0;
+    const hkiIds = searchResults?.map((r: { result_id: any; }) => r.result_id) ?? [];
+
+    if (hkiIds.length === 0) {
+      return NextResponse.json({
+        data: [],
+        totalCount: 0,
+      });
+    }
 
     const from = (params.page - 1) * params.pageSize;
-    query = query
+    const { data, error: dataError } = await supabase
+      .from(HKI_TABLE)
+      .select(
+        `*, pemohon!inner(*), jenis:jenis_hki(*), status_hki(*), pengusul(*), kelas:kelas_hki(*)`
+      )
+      .in('id_hki', hkiIds)
       .order(params.sortBy, { ascending: params.sortOrder === 'asc' })
       .range(from, from + params.pageSize - 1);
 
-    const { data, error, count } = await query;
-    if (error) throw error;
+    if (dataError) throw dataError;
 
     return NextResponse.json({
       data: data || [],
-      totalCount: count ?? 0,
+      totalCount: totalCount,
     });
 
   } catch (err: any) {
@@ -108,11 +140,9 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const rawData = Object.fromEntries(formData.entries());
     
-    // ✅ Perbaikan: Terapkan validasi Zod pada data POST untuk konsistensi dan keamanan
     const validatedData = hkiCreateSchema.parse(rawData);
     const { nama_pemohon, alamat, ...hkiFields } = validatedData;
 
-    // ✅ Perbaikan: Ganti helper `getPemohonId` dengan satu operasi "UPSERT" yang efisien dan atomik.
     const { data: pemohonData, error: pemohonError } = await supabase
       .from(PEMOHON_TABLE)
       .upsert(
@@ -153,12 +183,13 @@ export async function POST(request: NextRequest) {
         .update({ sertifikat_pdf: filePath })
         .eq('id_hki', newHki.id_hki);
 
-      // ✅ Perbaikan: Penanganan rollback yang lebih konsisten
       if (updateError) {
         // Rollback: Hapus file jika update gagal, dan hapus juga entri HKI
         await supabase.storage.from(HKI_BUCKET).remove([filePath]);
         await supabase.from(HKI_TABLE).delete().eq('id_hki', newHki.id_hki);
-        throw new Error(`Gagal menautkan file sertifikat: ${updateError.message}`);
+        throw new Error(
+          `Gagal menautkan file sertifikat: ${updateError.message}`
+        );
       }
     }
 

@@ -8,9 +8,6 @@ import { cache } from 'react'
 import { AlertTriangle } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
-
-// ✅ Tipe UserProfile dipindahkan ke file `types.ts` jika digunakan di tempat lain,
-//    namun untuk saat ini kita biarkan di sini untuk kejelasan.
 export type UserProfile = {
   id: string
   email?: string
@@ -19,11 +16,6 @@ export type UserProfile = {
   created_at: string
 }
 
-/**
- * ✅ Mengambil dan menggabungkan data pengguna dengan React `cache`.
- * `cache` memastikan fungsi ini hanya dieksekusi sekali per-request,
- * meningkatkan performa dengan mendeduplikasi panggilan data.
- */
 const getUsersData = cache(async () => {
   const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -36,7 +28,6 @@ const getUsersData = cache(async () => {
     }
   )
 
-  // Mengambil data pengguna dan profil secara paralel untuk efisiensi
   const [usersResult, profilesResult] = await Promise.all([
     supabaseAdmin.auth.admin.listUsers(),
     supabaseAdmin.from('profiles').select('id, full_name, role'),
@@ -57,7 +48,6 @@ const getUsersData = cache(async () => {
     throw new Error(`Gagal mengambil data profil: ${profilesError.message}`)
   }
 
-  // ✅ Menggunakan Map untuk pencarian profil yang lebih cepat (O(1) vs O(n))
   const profilesMap = new Map(profiles?.map((p) => [p.id, p]))
 
   const combinedUsers: UserProfile[] = users.map((user) => {
@@ -66,15 +56,14 @@ const getUsersData = cache(async () => {
       id: user.id,
       email: user.email,
       full_name: profile?.full_name ?? 'Nama Tidak Ditemukan',
-      role: profile?.role === 'admin' ? 'admin' : 'user', // Memastikan tipe peran yang valid
-      created_at: user.created_at, // Tidak perlu new Date() karena sudah string ISO
+      role: profile?.role === 'admin' ? 'admin' : 'user', 
+      created_at: user.created_at, 
     }
   })
 
   return combinedUsers
 })
 
-// ✅ Komponen untuk menampilkan error dengan UI yang konsisten
 const ErrorDisplay = ({ error }: { error: Error }) => (
   <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-destructive bg-red-50 p-12 text-center dark:bg-red-950/30">
     <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
@@ -95,8 +84,6 @@ const ErrorDisplay = ({ error }: { error: Error }) => (
 export default async function UserManagementPage() {
   const cookieStore = cookies()
   const supabase = createClient(cookieStore)
-
-  // ✅ Logika otentikasi dan otorisasi tetap sama, sudah sangat baik.
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -134,7 +121,6 @@ export default async function UserManagementPage() {
       </div>
     )
   } catch (error) {
-    // ✅ Menampilkan komponen ErrorDisplay yang lebih informatif
     return <ErrorDisplay error={error as Error} />
   }
 }
