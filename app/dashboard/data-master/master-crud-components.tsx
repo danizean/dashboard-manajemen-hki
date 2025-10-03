@@ -54,6 +54,7 @@ const schemaMap: Record<MasterDataType, z.ZodObject<any>> = {
 type MasterFormValues = z.infer<typeof jenisHkiSchema | typeof kelasHkiSchema | typeof pengusulSchema>;
 type Config = (typeof masterConfig)[MasterDataType];
 
+
 // --- [REDESAIN] Komponen Baris Tabel dengan Mode Edit Inline ---
 interface TableRowItemProps<T extends AnyMasterItem> {
     item: T;
