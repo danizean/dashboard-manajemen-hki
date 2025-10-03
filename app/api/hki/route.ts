@@ -8,11 +8,8 @@ import { authorizeAdmin, AuthError } from '@/lib/auth/server';
 
 export const dynamic = 'force-dynamic';
 
-// --- KONSTANTA ---
 const HKI_TABLE = 'hki';
 
-// --- SKEMA VALIDASI ZOD ---
-// Skema ini tetap sama, sangat bagus untuk memvalidasi parameter URL
 const getParamsSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
@@ -50,12 +47,10 @@ const hkiCreateSchema = z.object({
     id_kelas: z.coerce.number().optional().nullable(),
 });
 
-// --- HELPER TERPUSAT ---
 function apiError(message: string, status: number, errors?: object) {
   return NextResponse.json({ message, errors }, { status });
 }
 
-// --- API HANDLERS ---
 export async function GET(request: NextRequest) {
   const cookieStore = cookies();
   const supabase = createClient(cookieStore);
@@ -66,18 +61,15 @@ export async function GET(request: NextRequest) {
     
     const params = getParamsSchema.parse(searchParams);
 
-    // --- PERBAIKAN TOTAL: Kembali ke Query Builder ---
-    // Ini adalah cara yang lebih aman dan tidak bergantung pada RPC kustom.
+    // --- PERBAIKAN UTAMA: Mengganti !inner(*) menjadi (*) untuk left join yang lebih aman ---
     let query = supabase
       .from(HKI_TABLE)
       .select(
-        `*, pemohon!inner(*), jenis:jenis_hki(*), status_hki(*), pengusul(*), kelas:kelas_hki(*)`,
-        { count: 'exact' } // Meminta Supabase menghitung total baris yang cocok
+        `*, pemohon(*), jenis:jenis_hki(*), status_hki(*), pengusul(*), kelas:kelas_hki(*)`, // PERUBAHAN KRUSIAL DI SINI
+        { count: 'exact' }
       );
 
-    // Terapkan filter secara dinamis
     if (params.search) {
-      // Mencari di beberapa kolom sekaligus
       query = query.or(`nama_hki.ilike.%${params.search}%,pemohon.nama_pemohon.ilike.%${params.search}%,jenis_produk.ilike.%${params.search}%`);
     }
     if (params.jenisId) {
@@ -93,27 +85,22 @@ export async function GET(request: NextRequest) {
       query = query.eq('id_pengusul', params.pengusulId);
     }
 
-    // Terapkan paginasi
     const from = (params.page - 1) * params.pageSize;
     const to = from + params.pageSize - 1;
     query = query.range(from, to);
 
-    // Terapkan sorting
     const [sortColumn, ...sortRest] = params.sortBy.split('.');
-    if (sortRest.length > 0) {
-      // Sorting pada kolom relasional (contoh: 'pemohon.nama_pemohon')
+    if (sortRest.length > 0 && sortColumn === 'pemohon') { // Hanya handle sorting untuk pemohon
       query = query.order(sortRest.join('.'), {
         ascending: params.sortOrder === 'asc',
-        foreignTable: sortColumn,
+        foreignTable: 'pemohon',
       });
     } else {
-      // Sorting pada kolom utama
       query = query.order(params.sortBy, {
         ascending: params.sortOrder === 'asc',
       });
     }
 
-    // Eksekusi query
     const { data, error, count } = await query;
 
     if (error) {
@@ -134,7 +121,6 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Handler POST (Tidak ada perubahan, sudah baik)
 export async function POST(request: NextRequest) {
   const cookieStore = cookies();
   const supabase = createClient(cookieStore);
@@ -174,7 +160,6 @@ export async function POST(request: NextRequest) {
 
     const file = formData.get('file') as File | null;
     if (file && file.size > 0) {
-      // Menggunakan UUID untuk nama file yang unik dan aman
       const filePath = `public/${user.id}-${Date.now()}.${file.name.split('.').pop()}`;
       
       const { error: uploadError } = await supabase.storage.from(HKI_BUCKET).upload(filePath, file);
