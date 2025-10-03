@@ -26,7 +26,6 @@
     --ring: 222.2 84% 4.9%;
     --radius: 0.5rem;
     
-    /* ✅ PERBAIKAN: Menambahkan variabel warna untuk chart (Light Mode) */
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 40 70% 55%;
@@ -55,7 +54,6 @@
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
 
-    /* ✅ PERBAIKAN: Menambahkan variabel warna untuk chart (Dark Mode) */
     --chart-1: 210 70% 60%;
     --chart-2: 160 60% 55%;
     --chart-3: 40 70% 65%;
@@ -64,14 +62,9 @@
   }
 }
 
-@layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
-}
+/* Styling untuk body sekarang ditangani langsung di app/layout.tsx, 
+  jadi blok @layer base untuk body tidak lagi diperlukan di sini.
+*/
 
 @layer utilities {
   @keyframes spin {

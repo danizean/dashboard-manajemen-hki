@@ -28,8 +28,8 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     "eslint.config.js",
-    "next.config.cjs",
+    "next.config.js",
     "postcss.config.js"
-  ],
+, "tailwind.config.ts"  ],
   "exclude": ["node_modules"]
 }
