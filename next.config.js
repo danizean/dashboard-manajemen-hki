@@ -7,13 +7,15 @@ const nextConfig = {
     unoptimized: true,
   },
   webpack: (config) => {
-    config.module.rules.push({
-      test: /.*\.mjs$/,
-      type: "javascript/auto",
-      resolve: {
-        fullySpecified: false,
-      },
-    });
+    config.experiments = { ...config.experiments, topLevelAwait: true };
+    // Hapus rule .mjs yang lama
+    // config.module.rules.push({
+    //   test: /.*\.mjs$/,
+    //   type: "javascript/auto",
+    //   resolve: {
+    //     fullySpecified: false,
+    //   },
+    // });
 
     return config
   },
