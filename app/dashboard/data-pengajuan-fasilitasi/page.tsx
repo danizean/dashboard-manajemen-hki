@@ -47,10 +47,9 @@ const getFormOptions = cache(
     return {
       jenisOptions: jenisRes.data || [],
       statusOptions: statusRes.data || [],
-      // --- PERBAIKAN: Ubah nama properti dari 'tahun_fasilitasi' menjadi 'tahun' ---
-      // Ini akan menyelesaikan error TypeScript dan error build di Vercel.
+      // --- PERBAIKAN: Memastikan pemetaan dari 'tahun_fasilitasi' ke 'tahun' benar ---
       tahunOptions:
-        tahunRes.data?.map((y) => ({ tahun: y.tahun_fasilitasi })) || [],
+        tahunRes.data?.map((y: { tahun_fasilitasi: number }) => ({ tahun: y.tahun_fasilitasi })) || [],
       pengusulOptions:
         pengusulRes.data?.map((p: PengusulOptionRaw) => ({
           value: String(p.id_pengusul),
