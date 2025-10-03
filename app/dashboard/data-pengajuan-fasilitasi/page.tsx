@@ -7,6 +7,7 @@ import { Database } from '@/lib/database.types'
 import { cache } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+export const runtime = "nodejs"  
 export const revalidate = 3600
 
 type PengusulOptionRaw = { id_pengusul: number; nama_opd: string }
@@ -28,16 +29,15 @@ const getFormOptions = cache(
       supabase.from('kelas_hki').select('id_kelas, nama_kelas, tipe').order('id_kelas'),
     ])
 
-    if (jenisRes.error) throw new Error(`Gagal mengambil Jenis HKI: ${jenisRes.error.message}`);
-    if (statusRes.error) throw new Error(`Gagal mengambil Status HKI: ${statusRes.error.message}`);
-    if (tahunRes.error) throw new Error(`Gagal mengambil Tahun HKI: ${tahunRes.error.message}`);
-    if (pengusulRes.error) throw new Error(`Gagal mengambil Pengusul: ${pengusulRes.error.message}`);
-    if (kelasRes.error) throw new Error(`Gagal mengambil Kelas HKI: ${kelasRes.error.message}`);
+    if (jenisRes.error) throw new Error(`Gagal mengambil Jenis HKI: ${jenisRes.error.message}`)
+    if (statusRes.error) throw new Error(`Gagal mengambil Status HKI: ${statusRes.error.message}`)
+    if (tahunRes.error) throw new Error(`Gagal mengambil Tahun HKI: ${tahunRes.error.message}`)
+    if (pengusulRes.error) throw new Error(`Gagal mengambil Pengusul: ${pengusulRes.error.message}`)
+    if (kelasRes.error) throw new Error(`Gagal mengambil Kelas HKI: ${kelasRes.error.message}`)
 
-    // --- PERBAIKAN UTAMA: Menggunakan Array.from() untuk kompatibilitas TypeScript ---
-    const distinctYears = Array.from(new Set(
-        tahunRes.data?.map(item => item.tahun_fasilitasi).filter(Boolean) as number[]
-    )).sort((a, b) => b - a);
+    const distinctYears = Array.from(
+      new Set(tahunRes.data?.map(item => item.tahun_fasilitasi).filter(Boolean) as number[])
+    ).sort((a, b) => b - a)
 
     return {
       jenisOptions: jenisRes.data || [],
@@ -60,6 +60,7 @@ const getFormOptions = cache(
 export default async function HKIPage() {
   const cookieStore = cookies()
   const supabase = createClient(cookieStore)
+
   let formOptions: FormOptions = {
     jenisOptions: [],
     statusOptions: [],
