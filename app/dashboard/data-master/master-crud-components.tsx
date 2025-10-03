@@ -34,7 +34,7 @@ import {
 } from './master-data-client'
 import { cn } from '@/lib/utils'
 
-// --- Tipe dan Skema (Tidak Berubah) ---
+// --- Tipe dan Skema ---
 const jenisHkiSchema = z.object({
   nama_jenis_hki: z.string().min(3, 'Nama jenis harus memiliki minimal 3 karakter.'),
 });
@@ -54,8 +54,7 @@ const schemaMap: Record<MasterDataType, z.ZodObject<any>> = {
 type MasterFormValues = z.infer<typeof jenisHkiSchema | typeof kelasHkiSchema | typeof pengusulSchema>;
 type Config = (typeof masterConfig)[MasterDataType];
 
-
-// --- [REDESAIN] Komponen Baris Tabel dengan Mode Edit Inline ---
+// --- Komponen Baris Tabel ---
 interface TableRowItemProps<T extends AnyMasterItem> {
     item: T;
     config: Config;
@@ -77,31 +76,33 @@ const TableRowItem = memo(function TableRowItem<T extends AnyMasterItem>({
         defaultValues: item as DefaultValues<MasterFormValues>,
     });
     const { isSubmitting } = form.formState;
-    const visibleColumns = useMemo(() => config.columns.filter(col => !col.key.startsWith('id_')), [config.columns]);
 
     const handleSave = form.handleSubmit(async (data) => {
       await onSave(data);
     });
 
-    if (isEditing) {
-        return (
-            <TableRow className="bg-muted/50">
-                <TableCell className="text-center">{rowIndex + 1}</TableCell>
-                
-                {/* --- PERBAIKAN UTAMA: Render kondisional langsung di dalam JSX --- */}
-                {dataType === 'jenis_hki' && (
-                    <FormField control={form.control} name="nama_jenis_hki" render={({ field }) => (
-                        <TableCell><Input {...field} className="h-8" /></TableCell>
-                    )} />
-                )}
-                {dataType === 'kelas_hki' && (
+    // PERBAIKAN UTAMA: Inline form ditempatkan DI DALAM <TableCell>
+    const renderEditingFields = () => {
+        switch (dataType) {
+            case 'jenis_hki':
+                return (
+                    <TableCell>
+                        <FormField control={form.control} name="nama_jenis_hki" render={({ field }) => (
+                           <Input {...field} className="h-8" />
+                        )} />
+                    </TableCell>
+                );
+            case 'kelas_hki':
+                return (
                     <>
                         <TableCell>{form.getValues('id_kelas')}</TableCell>
-                        <FormField control={form.control} name="nama_kelas" render={({ field }) => (
-                            <TableCell><Input {...field} className="h-8" /></TableCell>
-                        )} />
-                        <FormField control={form.control} name="tipe" render={({ field }) => (
-                            <TableCell>
+                        <TableCell>
+                            <FormField control={form.control} name="nama_kelas" render={({ field }) => (
+                                <Input {...field} className="h-8" />
+                            )} />
+                        </TableCell>
+                        <TableCell>
+                            <FormField control={form.control} name="tipe" render={({ field }) => (
                                 <Select onValueChange={field.onChange} defaultValue={field.value}>
                                     <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                                     <SelectContent>
@@ -109,16 +110,28 @@ const TableRowItem = memo(function TableRowItem<T extends AnyMasterItem>({
                                         <SelectItem value="Jasa">Jasa</SelectItem>
                                     </SelectContent>
                                 </Select>
-                            </TableCell>
-                        )} />
+                            )} />
+                        </TableCell>
                     </>
-                )}
-                {dataType === 'pengusul' && (
-                    <FormField control={form.control} name="nama_opd" render={({ field }) => (
-                        <TableCell><Input {...field} className="h-8" /></TableCell>
-                    )} />
-                )}
+                );
+            case 'pengusul':
+                return (
+                    <TableCell>
+                        <FormField control={form.control} name="nama_opd" render={({ field }) => (
+                            <Input {...field} className="h-8" />
+                        )} />
+                    </TableCell>
+                );
+            default:
+                return null;
+        }
+    };
 
+    if (isEditing) {
+        return (
+            <TableRow className="bg-muted/50">
+                <TableCell className="text-center">{rowIndex + 1}</TableCell>
+                {renderEditingFields()}
                 <TableCell className="text-right">
                     <TooltipProvider delayDuration={100}>
                         <div className="flex items-center justify-end gap-1">
@@ -146,7 +159,7 @@ const TableRowItem = memo(function TableRowItem<T extends AnyMasterItem>({
     return (
       <TableRow>
           <TableCell className="text-center font-medium">{rowIndex + 1}</TableCell>
-          {visibleColumns.map((col) => (
+          {config.columns.filter(col => !col.key.startsWith('id_')).map((col) => (
               <TableCell key={col.key} className="font-medium">{String(item[col.key as keyof T] ?? '-')}</TableCell>
           ))}
           <TableCell className="text-right">
@@ -173,7 +186,7 @@ const TableRowItem = memo(function TableRowItem<T extends AnyMasterItem>({
 TableRowItem.displayName = 'TableRowItem';
 
 
-// --- [REDESAIN] Komponen Utama ---
+// --- Komponen Utama ---
 interface MasterCrudComponentProps<T extends AnyMasterItem> {
   dataType: MasterDataType;
   data: T[];
