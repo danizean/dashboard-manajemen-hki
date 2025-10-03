@@ -54,43 +54,11 @@ const schemaMap: Record<MasterDataType, z.ZodObject<any>> = {
 type MasterFormValues = z.infer<typeof jenisHkiSchema | typeof kelasHkiSchema | typeof pengusulSchema>;
 type Config = (typeof masterConfig)[MasterDataType];
 
-// --- [BARU] Komponen Form Inline untuk Edit ---
-const InlineFormFields: Record<MasterDataType, React.FC<{ form: UseFormReturn<any> }>> = {
-    jenis_hki: ({ form }) => (
-        <FormField control={form.control} name="nama_jenis_hki" render={({ field }) => (
-            <TableCell><Input {...field} className="h-8" /></TableCell>
-        )} />
-    ),
-    kelas_hki: ({ form }) => (
-        <>
-            {/* ID Kelas tidak bisa diedit inline, hanya ditampilkan */}
-            <TableCell>{form.getValues('id_kelas')}</TableCell>
-            <FormField control={form.control} name="nama_kelas" render={({ field }) => (
-                <TableCell><Input {...field} className="h-8" /></TableCell>
-            )} />
-            <FormField control={form.control} name="tipe" render={({ field }) => (
-                <TableCell>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                        <SelectContent><SelectItem value="Barang">Barang</SelectItem><SelectItem value="Jasa">Jasa</SelectItem></SelectContent>
-                    </Select>
-                </TableCell>
-            )} />
-        </>
-    ),
-    pengusul: ({ form }) => (
-        <FormField control={form.control} name="nama_opd" render={({ field }) => (
-            <TableCell><Input {...field} className="h-8" /></TableCell>
-        )} />
-    ),
-};
-
-
 // --- [REDESAIN] Komponen Baris Tabel dengan Mode Edit Inline ---
 interface TableRowItemProps<T extends AnyMasterItem> {
     item: T;
     config: Config;
-    dataType: MasterDataType; // PERBAIKAN: Tambahkan prop dataType
+    dataType: MasterDataType;
     rowIndex: number;
     isEditing: boolean;
     onEdit: (item: T) => void;
@@ -102,7 +70,6 @@ interface TableRowItemProps<T extends AnyMasterItem> {
 const TableRowItem = memo(function TableRowItem<T extends AnyMasterItem>({ 
     item, config, dataType, rowIndex, isEditing, onEdit, onCancel, onDelete, onSave 
 }: TableRowItemProps<T>) {
-    // PERBAIKAN: Gunakan `dataType` yang diterima dari props, bukan dari `config`
     const formSchema = useMemo(() => schemaMap[dataType] || z.object({}), [dataType]);
     const form = useForm<MasterFormValues>({
         resolver: zodResolver(formSchema),
@@ -116,23 +83,58 @@ const TableRowItem = memo(function TableRowItem<T extends AnyMasterItem>({
     });
 
     if (isEditing) {
-        // PERBAIKAN: Gunakan `dataType` yang diterima dari props
-        const FormComponent = InlineFormFields[dataType];
         return (
             <TableRow className="bg-muted/50">
                 <TableCell className="text-center">{rowIndex + 1}</TableCell>
-                {FormComponent && <FormComponent form={form} />}
+                
+                {/* --- PERBAIKAN UTAMA: Render kondisional langsung di dalam JSX --- */}
+                {dataType === 'jenis_hki' && (
+                    <FormField control={form.control} name="nama_jenis_hki" render={({ field }) => (
+                        <TableCell><Input {...field} className="h-8" /></TableCell>
+                    )} />
+                )}
+                {dataType === 'kelas_hki' && (
+                    <>
+                        <TableCell>{form.getValues('id_kelas')}</TableCell>
+                        <FormField control={form.control} name="nama_kelas" render={({ field }) => (
+                            <TableCell><Input {...field} className="h-8" /></TableCell>
+                        )} />
+                        <FormField control={form.control} name="tipe" render={({ field }) => (
+                            <TableCell>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                    <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="Barang">Barang</SelectItem>
+                                        <SelectItem value="Jasa">Jasa</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </TableCell>
+                        )} />
+                    </>
+                )}
+                {dataType === 'pengusul' && (
+                    <FormField control={form.control} name="nama_opd" render={({ field }) => (
+                        <TableCell><Input {...field} className="h-8" /></TableCell>
+                    )} />
+                )}
+
                 <TableCell className="text-right">
                     <TooltipProvider delayDuration={100}>
                         <div className="flex items-center justify-end gap-1">
-                            <Tooltip><TooltipTrigger asChild>
-                                <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-green-600 hover:text-green-600" onClick={handleSave} disabled={isSubmitting}>
-                                    {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin"/> : <Check className="h-4 w-4" />}
-                                </Button>
-                            </TooltipTrigger><TooltipContent><p>Simpan Perubahan</p></TooltipContent></Tooltip>
-                            <Tooltip><TooltipTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onCancel} disabled={isSubmitting}><X className="h-4 w-4" /></Button>
-                            </TooltipTrigger><TooltipContent><p>Batal</p></TooltipContent></Tooltip>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-green-600 hover:text-green-600" onClick={handleSave} disabled={isSubmitting}>
+                                        {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin"/> : <Check className="h-4 w-4" />}
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Simpan Perubahan</p></TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onCancel} disabled={isSubmitting}><X className="h-4 w-4" /></Button>
+                                </TooltipTrigger>
+                                <TooltipContent><p>Batal</p></TooltipContent>
+                            </Tooltip>
                         </div>
                     </TooltipProvider>
                 </TableCell>
@@ -149,12 +151,18 @@ const TableRowItem = memo(function TableRowItem<T extends AnyMasterItem>({
           <TableCell className="text-right">
               <TooltipProvider delayDuration={100}>
                   <div className="flex items-center justify-end gap-1">
-                      <Tooltip><TooltipTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(item)}><Pen className="h-4 w-4" /></Button>
-                      </TooltipTrigger><TooltipContent><p>Edit Data</p></TooltipContent></Tooltip>
-                      <Tooltip><TooltipTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-600" onClick={() => onDelete(item)}><Trash2 className="h-4 w-4" /></Button>
-                      </TooltipTrigger><TooltipContent><p>Hapus Data</p></TooltipContent></Tooltip>
+                      <Tooltip>
+                          <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(item)}><Pen className="h-4 w-4" /></Button>
+                          </TooltipTrigger>
+                          <TooltipContent><p>Edit Data</p></TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                          <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-600" onClick={() => onDelete(item)}><Trash2 className="h-4 w-4" /></Button>
+                          </TooltipTrigger>
+                          <TooltipContent><p>Hapus Data</p></TooltipContent>
+                      </Tooltip>
                   </div>
               </TooltipProvider>
           </TableCell>
@@ -170,7 +178,6 @@ interface MasterCrudComponentProps<T extends AnyMasterItem> {
   data: T[];
   config: Config;
 }
-// PERBAIKAN: Mengganti nama export dari MasterCrudTable menjadi MasterCrudComponent
 export const MasterCrudComponent = memo(function MasterCrudComponent<T extends AnyMasterItem>({
   dataType, data, config,
 }: MasterCrudComponentProps<T>) {
@@ -180,7 +187,6 @@ export const MasterCrudComponent = memo(function MasterCrudComponent<T extends A
   const [editingItemId, setEditingItemId] = useState<string | number | null>(null);
   const [deleteAlert, setDeleteAlert] = useState<{ isOpen: boolean; item?: T }>({ isOpen: false });
 
-  // PERBAIKAN: Menyesuaikan tipe parameter pada callback agar sesuai dengan ekspektasi props
   const openDeleteAlert = useCallback((item: AnyMasterItem) => setDeleteAlert({ isOpen: true, item: item as T }), []);
   const startEditing = useCallback((item: AnyMasterItem) => setEditingItemId(item[config.idKey as keyof AnyMasterItem] as string | number), [config.idKey]);
 
@@ -273,7 +279,7 @@ export const MasterCrudComponent = memo(function MasterCrudComponent<T extends A
                     key={item[config.idKey as keyof T] as React.Key}
                     item={item}
                     config={config}
-                    dataType={dataType} // PERBAIKAN: Teruskan prop dataType ke anak
+                    dataType={dataType}
                     rowIndex={index}
                     isEditing={editingItemId === item[config.idKey as keyof T]}
                     onEdit={startEditing}
@@ -328,6 +334,7 @@ const AddFormFields: Record<MasterDataType, React.FC<{ control: UseFormReturn<an
   kelas_hki: ({ control }) => (<div className="space-y-4"><FormField control={control} name="id_kelas" render={({ field }) => ( <FormItem><FormLabel>ID Kelas (1-45)</FormLabel><FormControl><Input type="number" placeholder="Contoh: 35" {...field} /></FormControl><FormMessage /></FormItem> )} /><FormField control={control} name="nama_kelas" render={({ field }) => ( <FormItem><FormLabel>Nama Kelas</FormLabel><FormControl><Input placeholder="Contoh: Periklanan, manajemen usaha..." {...field} /></FormControl><FormMessage /></FormItem> )} /><FormField control={control} name="tipe" render={({ field }) => ( <FormItem><FormLabel>Tipe</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Pilih tipe" /></SelectTrigger></FormControl><SelectContent><SelectItem value="Barang">Barang</SelectItem><SelectItem value="Jasa">Jasa</SelectItem></SelectContent></Select><FormMessage /></FormItem> )} /></div>),
   pengusul: ({ control }) => ( <FormField control={control} name="nama_opd" render={({ field }) => ( <FormItem><FormLabel>Nama Pengusul (OPD)</FormLabel><FormControl><Input placeholder="Contoh: Dinas Koperasi, Usaha Kecil dan Menengah" {...field} /></FormControl><FormMessage /></FormItem> )} /> ),
 };
+
 function MasterDataModal({ isOpen, onClose, dataType, config, onSave }: {
     isOpen: boolean; onClose: () => void; dataType: MasterDataType; config: Config; onSave: (values: FieldValues, item?: any) => Promise<void>;
 }) {
