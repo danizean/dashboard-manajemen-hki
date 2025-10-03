@@ -45,8 +45,6 @@ import { StatusHKI } from '@/lib/types'
 
 // Helper Types
 type ComboboxOption = { value: string; label: string }
-type ExportFormat = 'csv' | 'xlsx'
-type FilterType = 'year' | 'pengusul' | 'status'
 
 interface ExportModalProps {
   isOpen: boolean
@@ -56,11 +54,9 @@ interface ExportModalProps {
     pengusulOptions: ComboboxOption[]
     statusOptions: StatusHKI[]
   }
-  // ✅ NEW PROP: Untuk menampilkan skeleton loading saat options masih di-fetch
   isLoadingOptions?: boolean
 }
 
-// ✅ ZOD SCHEMA: Mendefinisikan struktur dan validasi form.
 const exportSchema = z.object({
   filterBy: z.enum(['year', 'pengusul', 'status']),
   filterValue: z.string().min(1, { message: 'Nilai filter harus dipilih.' }),
@@ -75,7 +71,6 @@ export function ExportModalRefactored({
   formOptions,
   isLoadingOptions = false,
 }: ExportModalProps) {
-  // ✅ REACT-HOOK-FORM: Manajemen state form yang terpusat.
   const form = useForm<ExportFormValues>({
     resolver: zodResolver(exportSchema),
     defaultValues: {
@@ -88,12 +83,10 @@ export function ExportModalRefactored({
   const { control, handleSubmit, watch, reset, setValue } = form
   const watchedFilterBy = watch('filterBy')
 
-  // Reset filterValue setiap kali filterBy berubah
   useEffect(() => {
     setValue('filterValue', '')
   }, [watchedFilterBy, setValue])
 
-  // ✅ REACT QUERY (useMutation): Mengelola proses ekspor data.
   const exportMutation = useMutation({
     mutationFn: (values: ExportFormValues) => {
       const filters = {
@@ -124,11 +117,10 @@ export function ExportModalRefactored({
   }
 
   const handleClose = () => {
-    reset() // Reset form state saat modal ditutup
+    reset()
     onClose()
   }
 
-  // Memoized options for performance
   const tahunOptions = React.useMemo(
     () =>
       formOptions.tahunOptions.map((y) => ({
@@ -242,7 +234,7 @@ export function ExportModalRefactored({
                 <RadioGroup
                   onValueChange={field.onChange}
                   value={field.value}
-                  className="grid grid-cols-2 sm:grid-cols-3 gap-3" // ✅ RESPONSIVE
+                  className="grid grid-cols-2 sm:grid-cols-3 gap-3"
                 >
                   {[
                     { value: 'year', label: 'Tahun', icon: CalendarDays },
@@ -314,12 +306,10 @@ export function ExportModalRefactored({
   }
 
   return (
-    // ✅ FRAMER MOTION: Animasi exit memerlukan AnimatePresence
     <AnimatePresence>
       {isOpen && (
         <Dialog open={isOpen} onOpenChange={handleClose}>
           <DialogContent asChild className="sm:max-w-lg">
-            {/* Wrapper untuk animasi */}
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
