@@ -81,7 +81,6 @@ const TableRowItem = memo(function TableRowItem<T extends AnyMasterItem>({
       await onSave(data);
     });
 
-    // PERBAIKAN UTAMA: Inline form ditempatkan DI DALAM <TableCell>
     const renderEditingFields = () => {
         switch (dataType) {
             case 'jenis_hki':
