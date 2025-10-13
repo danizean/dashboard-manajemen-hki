@@ -66,4 +66,4 @@ export default [
   },
 
   prettierConfig,
-]J
+]

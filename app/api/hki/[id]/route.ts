@@ -1,3 +1,4 @@
+// app/api/hki/[id]/route.ts
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'

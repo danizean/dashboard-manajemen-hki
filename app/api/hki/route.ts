@@ -1,41 +1,47 @@
 // app/api/hki/route.ts
 import { createClient } from '@/utils/supabase/server';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
+import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { Database } from '@/lib/database.types';
 import { authorizeAdmin, AuthError } from '@/lib/auth/server';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 // --- KONSTANTA ---
 const HKI_TABLE = 'hki';
+const HKI_BUCKET = 'sertifikat-hki';
+const PEMOHON_TABLE = 'pemohon';
 
 // --- SKEMA VALIDASI ZOD ---
-// Skema ini tetap sama, sangat bagus untuk memvalidasi parameter URL
+
+// ✅ PERBAIKAN FINAL: Fungsi preprocess yang kuat untuk menangani string kosong/NaN
+// Fungsi ini akan mengubah string kosong, null, atau undefined menjadi undefined,
+// sehingga Zod akan menganggapnya sebagai field opsional dan mengabaikannya.
+const numberPreprocess = (val: unknown) => {
+  if (val === '' || val === null || val === undefined) {
+    return undefined;
+  }
+  const processed = Number(val);
+  // Jika hasilnya NaN (misal: dari input "abc"), Zod akan menolaknya di langkah berikutnya.
+  return processed;
+};
+
 const getParamsSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
   sortBy: z.string().default('created_at'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
   search: z.string().optional(),
-  jenisId: z.preprocess(
-    (val) => (val === '' || val === null || val === undefined ? undefined : Number(val)),
-    z.number().optional()
-  ),
-  statusId: z.preprocess(
-    (val) => (val === '' || val === null || val === undefined ? undefined : Number(val)),
-    z.number().optional()
-  ),
-  year: z.preprocess(
-    (val) => (val === '' || val === null || val === undefined ? undefined : Number(val)),
-    z.number().optional()
-  ),
-  pengusulId: z.preprocess(
-    (val) => (val === '' || val === null || val === undefined ? undefined : Number(val)),
-    z.number().optional()
-  ),
+  jenisId: z.preprocess(numberPreprocess, z.number().optional()),
+  statusId: z.preprocess(numberPreprocess, z.number().optional()),
+  year: z.preprocess(numberPreprocess, z.number().optional()),
+  pengusulId: z.preprocess(numberPreprocess, z.number().optional()),
 });
+
 
 const hkiCreateSchema = z.object({
     nama_hki: z.string().min(3, 'Nama HKI minimal 3 karakter.'),
@@ -66,56 +72,57 @@ export async function GET(request: NextRequest) {
     
     const params = getParamsSchema.parse(searchParams);
 
-    // --- PERBAIKAN TOTAL: Kembali ke Query Builder ---
-    // Ini adalah cara yang lebih aman dan tidak bergantung pada RPC kustom.
     let query = supabase
       .from(HKI_TABLE)
       .select(
         `*, pemohon!inner(*), jenis:jenis_hki(*), status_hki(*), pengusul(*), kelas:kelas_hki(*)`,
-        { count: 'exact' } // Meminta Supabase menghitung total baris yang cocok
+        { count: 'exact' }
       );
 
-    // Terapkan filter secara dinamis
-    if (params.search) {
-      // Mencari di beberapa kolom sekaligus
-      query = query.or(`nama_hki.ilike.%${params.search}%,pemohon.nama_pemohon.ilike.%${params.search}%,jenis_produk.ilike.%${params.search}%`);
-    }
-    if (params.jenisId) {
-      query = query.eq('id_jenis_hki', params.jenisId);
-    }
-    if (params.statusId) {
-      query = query.eq('id_status', params.statusId);
-    }
-    if (params.year) {
-      query = query.eq('tahun_fasilitasi', params.year);
-    }
-    if (params.pengusulId) {
-      query = query.eq('id_pengusul', params.pengusulId);
+    if (params.search && params.search.trim() !== '') {
+        const searchTerm = params.search.trim();
+        
+        const { data: pemohonData, error: pemohonError } = await supabase
+            .from('pemohon')
+            .select('id_pemohon')
+            .ilike('nama_pemohon', `%${searchTerm}%`);
+        
+        if (pemohonError) throw new Error(`Gagal mencari pemohon: ${pemohonError.message}`);
+        
+        const pemohonIds = pemohonData?.map(p => p.id_pemohon) || [];
+
+        let orFilter = `nama_hki.ilike.%${searchTerm}%,jenis_produk.ilike.%${searchTerm}%`;
+        if (pemohonIds.length > 0) {
+            orFilter += `,id_pemohon.in.(${pemohonIds.join(',')})`;
+        }
+        
+        query = query.or(orFilter);
     }
 
-    // Terapkan paginasi
+    // Filter lainnya (sekarang aman dari string kosong)
+    if (params.jenisId) query = query.eq('id_jenis_hki', params.jenisId);
+    if (params.statusId) query = query.eq('id_status', params.statusId);
+    if (params.year) query = query.eq('tahun_fasilitasi', params.year);
+    if (params.pengusulId) query = query.eq('id_pengusul', params.pengusulId);
+
+    // Paginasi
     const from = (params.page - 1) * params.pageSize;
     const to = from + params.pageSize - 1;
     query = query.range(from, to);
-
-    // Terapkan sorting
+    
     const [sortColumn, ...sortRest] = params.sortBy.split('.');
-    if (sortRest.length > 0) {
-      // Sorting pada kolom relasional (contoh: 'pemohon.nama_pemohon')
+    if (sortRest.length > 0 && ['pemohon', 'jenis_hki', 'status_hki', 'pengusul', 'kelas_hki'].includes(sortColumn)) {
       query = query.order(sortRest.join('.'), {
         ascending: params.sortOrder === 'asc',
         foreignTable: sortColumn,
       });
     } else {
-      // Sorting pada kolom utama
       query = query.order(params.sortBy, {
         ascending: params.sortOrder === 'asc',
       });
     }
 
-    // Eksekusi query
     const { data, error, count } = await query;
-
     if (error) {
         console.error('[API GET HKI Query Error]:', error);
         throw new Error(`Gagal mengambil data: ${error.message}`);
@@ -130,87 +137,85 @@ export async function GET(request: NextRequest) {
     if (err instanceof z.ZodError) return apiError('Parameter query tidak valid.', 400, err.flatten().fieldErrors);
     if (err instanceof AuthError) return apiError(err.message, 403);
     console.error('[API GET HKI Error]:', err);
-    return apiError(`Gagal mengambil data: ${err.message}`, 500);
+    return apiError(`Terjadi kesalahan saat berkomunikasi dengan server.`, 500, { detail: err.message });
   }
 }
-
-// Handler POST (Tidak ada perubahan, sudah baik)
-export async function POST(request: NextRequest) {
-  const cookieStore = cookies();
-  const supabase = createClient(cookieStore);
-  const HKI_BUCKET = 'sertifikat-hki';
-  const PEMOHON_TABLE = 'pemohon';
   
-  try {
-    const user = await authorizeAdmin(supabase);
-    const formData = await request.formData();
-    const rawData = Object.fromEntries(formData.entries());
-    
-    const validatedData = hkiCreateSchema.parse(rawData);
-    const { nama_pemohon, alamat, ...hkiFields } = validatedData;
-
-    const { data: pemohonData, error: pemohonError } = await supabase
-      .from(PEMOHON_TABLE)
-      .upsert(
-        { nama_pemohon: nama_pemohon.trim(), alamat: alamat || null },
-        { onConflict: 'nama_pemohon', ignoreDuplicates: false }
-      )
-      .select('id_pemohon')
-      .single();
-
-    if (pemohonError) throw new Error(`Gagal memproses data pemohon: ${pemohonError.message}`);
-    if (!pemohonData) throw new Error('Gagal membuat atau menemukan pemohon.');
-    
-    const hkiRecord = { ...hkiFields, id_pemohon: pemohonData.id_pemohon };
-    const { data: newHki, error: insertError } = await supabase
-      .from(HKI_TABLE)
-      .insert(hkiRecord)
-      .select('id_hki')
-      .single();
-
-    if (insertError || !newHki) {
-      throw new Error(`Gagal menyimpan data HKI: ${insertError?.message || 'Data tidak kembali.'}`);
-    }
-
-    const file = formData.get('file') as File | null;
-    if (file && file.size > 0) {
-      // Menggunakan UUID untuk nama file yang unik dan aman
-      const filePath = `public/${user.id}-${Date.now()}.${file.name.split('.').pop()}`;
+export async function POST(request: NextRequest) {
+    const cookieStore = cookies();
+    const supabase = createClient(cookieStore);
+  
+    try {
+      const user = await authorizeAdmin(supabase);
+      const formData = await request.formData();
+      const rawData = Object.fromEntries(formData.entries());
       
-      const { error: uploadError } = await supabase.storage.from(HKI_BUCKET).upload(filePath, file);
+      const validatedData = hkiCreateSchema.parse(rawData);
+      const { nama_pemohon, alamat, ...hkiFields } = validatedData;
+  
+      const { data: pemohonData, error: pemohonError } = await supabase
+        .from(PEMOHON_TABLE)
+        .upsert(
+          { nama_pemohon: nama_pemohon.trim(), alamat: alamat || null },
+          { onConflict: 'nama_pemohon', ignoreDuplicates: false }
+        )
+        .select('id_pemohon')
+        .single();
+  
+      if (pemohonError) throw new Error(`Gagal memproses data pemohon: ${pemohonError.message}`);
+      if (!pemohonData) throw new Error('Gagal membuat atau menemukan pemohon.');
       
-      if (uploadError) {
-        await supabase.from(HKI_TABLE).delete().eq('id_hki', newHki.id_hki);
-        throw new Error(`Upload file gagal: ${uploadError.message}`);
-      }
-
-      const { error: updateError } = await supabase
+      const hkiRecord = { ...hkiFields, id_pemohon: pemohonData.id_pemohon };
+      const { data: newHki, error: insertError } = await supabase
         .from(HKI_TABLE)
-        .update({ sertifikat_pdf: filePath })
-        .eq('id_hki', newHki.id_hki);
-
-      if (updateError) {
-        await supabase.storage.from(HKI_BUCKET).remove([filePath]);
-        await supabase.from(HKI_TABLE).delete().eq('id_hki', newHki.id_hki);
-        throw new Error(
-          `Gagal menautkan file sertifikat: ${updateError.message}`
-        );
+        .insert(hkiRecord)
+        .select('id_hki')
+        .single();
+  
+      if (insertError || !newHki) {
+        throw new Error(`Gagal menyimpan data HKI: ${insertError?.message || 'Data tidak kembali.'}`);
       }
+  
+      const file = formData.get('file') as File | null;
+      if (file && file.size > 0) {
+        const filePath = `public/${user.id}-${uuidv4()}.${file.name.split('.').pop()}`;
+        
+        const { error: uploadError } = await supabase.storage.from(HKI_BUCKET).upload(filePath, file);
+        
+        if (uploadError) {
+          await supabase.from(HKI_TABLE).delete().eq('id_hki', newHki.id_hki);
+          throw new Error(`Upload file gagal: ${uploadError.message}`);
+        }
+  
+        const { error: updateError } = await supabase
+          .from(HKI_TABLE)
+          .update({ sertifikat_pdf: filePath })
+          .eq('id_hki', newHki.id_hki);
+  
+        if (updateError) {
+          await supabase.storage.from(HKI_BUCKET).remove([filePath]);
+          await supabase.from(HKI_TABLE).delete().eq('id_hki', newHki.id_hki);
+          throw new Error(
+            `Gagal menautkan file sertifikat: ${updateError.message}`
+          );
+        }
+      }
+  
+      const { data: finalData, error: finalFetchError } = await supabase
+        .from(HKI_TABLE)
+        .select(`*, pemohon(*), jenis:jenis_hki(*), status_hki(*), pengusul(*), kelas:kelas_hki(*)`)
+        .eq('id_hki', newHki.id_hki)
+        .single();
+  
+      if (finalFetchError) throw new Error('Gagal mengambil data yang baru dibuat.');
+  
+      return NextResponse.json({ success: true, data: finalData }, { status: 201 });
+    } catch (err: any) {
+      if (err instanceof z.ZodError) return apiError('Data yang dikirim tidak valid.', 400, err.flatten().fieldErrors);
+      if (err instanceof AuthError) return apiError(err.message, 403);
+  
+      console.error(`[API POST HKI Error]: ${err.message}`);
+      return apiError(`Terjadi kesalahan tak terduga: ${err.message}`, 500);
     }
-
-    const { data: finalData, error: finalFetchError } = await supabase
-      .from(HKI_TABLE)
-      .select(`*, pemohon(*), jenis:jenis_hki(*), status_hki(*), pengusul(*), kelas:kelas_hki(*)`)
-      .eq('id_hki', newHki.id_hki)
-      .single();
-
-    if (finalFetchError) throw new Error('Gagal mengambil data yang baru dibuat.');
-
-    return NextResponse.json({ success: true, data: finalData }, { status: 201 });
-  } catch (err: any) {
-    if (err instanceof z.ZodError) return apiError('Data yang dikirim tidak valid.', 400, err.flatten().fieldErrors);
-    if (err instanceof AuthError) return apiError(err.message, 403);
-    console.error(`[API POST HKI Error]: ${err.message}`);
-    return apiError(`Terjadi kesalahan tak terduga: ${err.message}`, 500);
-  }
 }
+

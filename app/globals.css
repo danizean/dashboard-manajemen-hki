@@ -62,9 +62,16 @@
   }
 }
 
-/* Styling untuk body sekarang ditangani langsung di app/layout.tsx, 
-  jadi blok @layer base untuk body tidak lagi diperlukan di sini.
-*/
+/* ===== BLOK YANG DITAMBAHKAN KEMBALI ===== */
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+/* ========================================= */
 
 @layer utilities {
   @keyframes spin {
