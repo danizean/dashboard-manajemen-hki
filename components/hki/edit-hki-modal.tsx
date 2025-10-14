@@ -1,15 +1,6 @@
-// components/hki/edit-hki-modal.tsx
-// FIX: Menambahkan 'AnimatePresence' ke dalam import dari framer-motion.
 'use client'
 
-import React, {
-  useState,
-  useCallback,
-  memo,
-  useMemo,
-  lazy,
-  Suspense,
-} from 'react'
+import React, { useState, useCallback, memo, useMemo, lazy, Suspense } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -24,18 +15,14 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { AlertCircle, PencilLine, Loader2 } from 'lucide-react'
 import { useHKIEntry } from '@/hooks/use-hki-entry'
-import { motion, AnimatePresence } from 'framer-motion' // <-- FIX: 'AnimatePresence' ditambahkan
+// 🐞 FIX: Tambahkan 'AnimatePresence' ke dalam import
+import { motion, AnimatePresence } from 'framer-motion'
 
-const HKIForm = lazy(() =>
-  import('@/components/forms/hki-form').then((module) => ({
-    default: module.HKIForm,
-  }))
-)
+const HKIForm = lazy(() => 
+  import('@/components/forms/hki-form').then(module => ({ default: module.HKIForm }))
+);
 
-type EditModalFormOptions = Pick<
-  FormOptions,
-  'jenisOptions' | 'statusOptions' | 'pengusulOptions' | 'kelasOptions'
->
+type EditModalFormOptions = Pick<FormOptions, 'jenisOptions' | 'statusOptions' | 'pengusulOptions' | 'kelasOptions'>;
 
 interface EditHKIModalProps {
   isOpen: boolean
@@ -85,124 +72,120 @@ const ErrorDisplay = memo(
 )
 ErrorDisplay.displayName = 'ErrorDisplay'
 
-export const EditHKIModal = memo(
-  ({
-    isOpen,
-    onClose,
-    onSuccess,
-    onError,
-    hkiId,
-    formOptions,
-  }: EditHKIModalProps) => {
-    const { data, isLoading, error, refetch } = useHKIEntry(hkiId, isOpen)
-    const [isSubmitting, setIsSubmitting] = useState(false)
+export const EditHKIModal = memo(({
+  isOpen,
+  onClose,
+  onSuccess,
+  onError,
+  hkiId,
+  formOptions,
+}: EditHKIModalProps) => {
+  const { data, isLoading, error, refetch } = useHKIEntry(hkiId, isOpen)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-    const handleClose = useCallback(() => {
-      if (!isSubmitting) {
-        onClose()
-      }
-    }, [isSubmitting, onClose])
-
-    const renderContent = () => {
-      if (isLoading) {
-        return <FormSkeleton />
-      }
-      if (error) {
-        return <ErrorDisplay error={error} onRetry={refetch} />
-      }
-      if (data) {
-        return (
-          <Suspense fallback={<FormSkeleton />}>
-            <HKIForm
-              key={hkiId}
-              id={EDIT_FORM_ID}
-              mode="edit"
-              initialData={data}
-              jenisOptions={formOptions.jenisOptions}
-              statusOptions={formOptions.statusOptions}
-              pengusulOptions={formOptions.pengusulOptions}
-              kelasOptions={formOptions.kelasOptions}
-              onSubmittingChange={setIsSubmitting}
-              onSuccess={onSuccess}
-              onError={onError}
-            />
-          </Suspense>
-        )
-      }
-      return null
+  const handleClose = useCallback(() => {
+    if (!isSubmitting) {
+      onClose()
     }
+  }, [isSubmitting, onClose])
+  
+  const renderContent = () => {
+    if (isLoading) {
+      return <FormSkeleton />;
+    }
+    if (error) {
+      return <ErrorDisplay error={error} onRetry={refetch} />;
+    }
+    if (data) {
+      return (
+        <Suspense fallback={<FormSkeleton />}>
+          <HKIForm
+            key={hkiId}
+            id={EDIT_FORM_ID}
+            mode="edit"
+            initialData={data}
+            jenisOptions={formOptions.jenisOptions}
+            statusOptions={formOptions.statusOptions}
+            pengusulOptions={formOptions.pengusulOptions}
+            kelasOptions={formOptions.kelasOptions}
+            onSubmittingChange={setIsSubmitting}
+            onSuccess={onSuccess}
+            onError={onError}
+          />
+        </Suspense>
+      );
+    }
+    return null;
+  };
 
-    return (
-      <Dialog open={isOpen} onOpenChange={handleClose}>
-        <DialogContent className="sm:max-w-4xl p-0 flex flex-col max-h-[90vh]">
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, ease: 'easeOut' }}
-          >
-            <DialogHeader className="flex flex-row items-center gap-4 px-6 py-4 border-b">
-              <div className="bg-primary/10 p-2.5 rounded-lg">
-                <PencilLine className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <DialogTitle className="text-xl font-semibold">
-                  Edit Entri HKI
-                </DialogTitle>
-                <DialogDescription className="text-sm text-muted-foreground mt-1">
-                  {isLoading
-                    ? 'Memuat data...'
-                    : data
-                      ? `Perbarui informasi untuk "${data.nama_hki}"`
-                      : error
-                        ? 'Gagal memuat detail entri.'
-                        : 'Pilih data untuk diedit.'}
-                </DialogDescription>
-              </div>
-            </DialogHeader>
-          </motion.div>
+  return (
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-4xl p-0 flex flex-col max-h-[90vh]">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, ease: 'easeOut' }}
+        >
+          <DialogHeader className="flex flex-row items-center gap-4 px-6 py-4 border-b">
+            <div className="bg-primary/10 p-2.5 rounded-lg">
+              <PencilLine className="h-6 w-6 text-primary" />
+            </div>
+            <div>
+              <DialogTitle className="text-xl font-semibold">
+                Edit Entri HKI
+              </DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground mt-1">
+                {isLoading
+                  ? 'Memuat data...'
+                  : data
+                    ? `Perbarui informasi untuk "${data.nama_hki}"`
+                    : error ? 'Gagal memuat detail entri.' : 'Pilih data untuk diedit.'}
+              </DialogDescription>
+            </div>
+          </DialogHeader>
+        </motion.div>
 
-          <div className="flex-1 overflow-y-auto px-6 py-4 min-h-[300px]">
-            {renderContent()}
-          </div>
+        <div className="flex-1 overflow-y-auto px-6 py-4 min-h-[300px]">
+          {renderContent()}
+        </div>
 
-          <AnimatePresence>
-            {!isLoading && !error && data && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 20 }}
-                transition={{ duration: 0.3, ease: 'easeOut' }}
-              >
-                <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 px-6 py-4 border-t bg-muted/40">
-                  <Button
-                    variant="outline"
-                    onClick={handleClose}
-                    disabled={isSubmitting}
-                  >
-                    Batal
-                  </Button>
-                  <Button
-                    type="submit"
-                    form={EDIT_FORM_ID}
-                    disabled={isSubmitting}
-                    className="gap-2 w-full sm:w-auto"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>Menyimpan...</span>
-                      </>
-                    ) : (
-                      'Simpan Perubahan'
-                    )}
-                  </Button>
-                </DialogFooter>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </DialogContent>
-      </Dialog>
-    )
-  }
-)
+        <AnimatePresence>
+          {!isLoading && !error && data && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+            >
+              <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 px-6 py-4 border-t bg-muted/40">
+                <Button
+                  variant="outline"
+                  onClick={handleClose}
+                  disabled={isSubmitting}
+                >
+                  Batal
+                </Button>
+                <Button
+                  type="submit"
+                  form={EDIT_FORM_ID}
+                  disabled={isSubmitting}
+                  className="gap-2 w-full sm:w-auto"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Menyimpan...</span>
+                    </>
+                  ) : (
+                    'Simpan Perubahan'
+                  )}
+                </Button>
+              </DialogFooter>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </DialogContent>
+    </Dialog>
+  )
+})
 EditHKIModal.displayName = 'EditHKIModal'

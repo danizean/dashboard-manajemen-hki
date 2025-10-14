@@ -20,16 +20,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className + ' bg-background text-foreground'}>
-        <Providers>
-          {' '}
-          {/* <-- Bungkus children */}
+        <Providers> {/* <-- Bungkus children */}
           {children}
-          <Toaster
-            position="top-center"
-            richColors
-            closeButton
-            theme="system"
-          />
+          <Toaster position="top-center" richColors closeButton theme="system" />
         </Providers>
       </body>
     </html>

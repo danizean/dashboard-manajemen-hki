@@ -1,67 +1,27 @@
-import globals from 'globals'
-import pluginJs from '@eslint/js'
-import tseslint from 'typescript-eslint'
-import pluginReact from 'eslint-plugin-react/configs/recommended.js'
-import pluginReactHooks from 'eslint-plugin-react-hooks'
 import nextPlugin from '@next/eslint-plugin-next'
-import prettierConfig from 'eslint-config-prettier'
+import securityPlugin from 'eslint-plugin-security'
 
-/** @type {import('eslint').Linter.FlatConfig[]} */
 export default [
-  // 1. Global ignores
   {
-    ignores: [
-      'node_modules/',
-      '.next/',
-      'out/',
-      'dist/',
-      'lib/database.types.ts',
-    ],
+    ignores: ['.next/**', 'node_modules/**'],
   },
-
-  // 2. Konfigurasi dasar
-  pluginJs.configs.recommended,
-  ...tseslint.configs.recommended,
   {
-    ...pluginReact,
-    files: ['**/*.{ts,tsx}'],
-    settings: {
-      react: {
-        version: 'detect',
-      },
-    },
-  },
-  nextPlugin.configs.recommended,
-  nextPlugin.configs['core-web-vitals'],
-
-  // 3. Konfigurasi utama untuk file proyek
-  {
-    files: ['**/*.{js,mjs,cjs,ts,jsx,tsx}'],
-    plugins: {
-      'react-hooks': pluginReactHooks,
-    },
+    files: ['**/*.js', '**/*.ts', '**/*.tsx'],
     languageOptions: {
-      parser: tseslint.parser,
       parserOptions: {
-        project: true,
+        ecmaVersion: 2022,
+        sourceType: 'module',
       },
-      globals: {
-        ...globals.browser,
-        ...globals.node,
-      },
+    },
+    plugins: {
+      '@next/next': nextPlugin,
+      security: securityPlugin,
     },
     rules: {
-      ...pluginReactHooks.configs.recommended.rules,
-      '@typescript-eslint/no-unused-vars': [
-        'warn',
-        { argsIgnorePattern: '^_' },
-      ],
-      '@typescript-eslint/no-explicit-any': 'off',
-      'react/react-in-jsx-scope': 'off',
-      'react/prop-types': 'off',
+      ...nextPlugin.configs['core-web-vitals'].rules,
+      ...securityPlugin.configs.recommended.rules,
+      'no-console': 'warn',
+      '@next/next/no-img-element': 'off',
     },
   },
-
-  // 4. Konfigurasi Prettier (harus di akhir)
-  prettierConfig,
 ]

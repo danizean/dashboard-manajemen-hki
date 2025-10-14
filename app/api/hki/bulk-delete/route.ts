@@ -13,14 +13,9 @@ export async function POST(request: NextRequest) {
 
   try {
     // 1. Validasi Sesi dan Peran Admin
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
+    const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
-      return NextResponse.json(
-        { error: 'Tidak terautentikasi' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: 'Tidak terautentikasi' }, { status: 401 })
     }
 
     const { data: profile, error: profileError } = await supabase
@@ -30,19 +25,13 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (profileError || profile?.role !== 'admin') {
-      return NextResponse.json(
-        { error: 'Akses ditolak. Hanya admin yang dapat menghapus data.' },
-        { status: 403 }
-      )
+      return NextResponse.json({ error: 'Akses ditolak. Hanya admin yang dapat menghapus data.' }, { status: 403 })
     }
 
     // 2. Validasi Input
     const { ids } = await request.json()
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return NextResponse.json(
-        { error: 'Daftar ID tidak valid atau kosong.' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Daftar ID tidak valid atau kosong.' }, { status: 400 })
     }
 
     // 3. Ambil path file yang akan dihapus dari storage
@@ -53,10 +42,7 @@ export async function POST(request: NextRequest) {
 
     if (fetchError) {
       console.error('Supabase fetch error (bulk-delete):', fetchError)
-      return NextResponse.json(
-        { error: 'Gagal mengambil data HKI untuk dihapus.' },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: 'Gagal mengambil data HKI untuk dihapus.' }, { status: 500 })
     }
 
     // 4. Hapus entri dari tabel database
@@ -67,10 +53,7 @@ export async function POST(request: NextRequest) {
 
     if (deleteError) {
       console.error('Supabase delete error (bulk-delete):', deleteError)
-      return NextResponse.json(
-        { error: 'Gagal menghapus entri HKI dari database.' },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: 'Gagal menghapus entri HKI dari database.' }, { status: 500 })
     }
 
     // 5. Hapus file terkait dari storage jika ada
@@ -83,32 +66,21 @@ export async function POST(request: NextRequest) {
           .from(HKI_BUCKET)
           .remove(filePaths)
         if (storageError) {
-          console.warn(
-            'Gagal menghapus beberapa file dari storage:',
-            storageError
-          )
+          console.warn('Gagal menghapus beberapa file dari storage:', storageError)
         }
       }
     }
 
-    return NextResponse.json(
-      {
+    return NextResponse.json({
         message: `${ids.length} entri berhasil dihapus.`,
         deletedIds: ids,
-      },
-      { status: 200 }
+      }, { status: 200 }
     )
   } catch (error: any) {
     console.error('Unexpected bulk delete error:', error)
     if (error.name === 'SyntaxError') {
-      return NextResponse.json(
-        { error: 'Request body tidak valid (bukan JSON).' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'Request body tidak valid (bukan JSON).' }, { status: 400 })
     }
-    return NextResponse.json(
-      { error: 'Terjadi kesalahan pada server.' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Terjadi kesalahan pada server.' }, { status: 500 })
   }
 }

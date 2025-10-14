@@ -1,31 +1,48 @@
 // app/api/users/route.ts
-import { createClient as createServerClient } from '@/utils/supabase/server'
-import { type NextRequest, NextResponse } from 'next/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { z } from 'zod'
-import { cookies } from 'next/headers'
-import { authorizeAdmin, AuthError } from '@/lib/auth/server'
 
-const newUserSchema = z.object({
-  email: z.string().email('Format email tidak valid.'),
-  password: z.string().min(6, 'Password minimal 6 karakter.'),
-  full_name: z.string().min(3, 'Nama lengkap minimal 3 karakter.'),
-  role: z.enum(['admin', 'user']).optional().default('user'),
-})
+import { createClient as createServerClient } from '@/utils/supabase/server'
+import { createClient } from '@supabase/supabase-js'
+import { cookies } from 'next/headers'
+import { NextRequest, NextResponse } from 'next/server'
 
 /**
- * GET: Mengambil daftar semua pengguna (hanya admin).
+ * GET: Mengambil daftar semua pengguna.
+ * Hanya bisa diakses oleh pengguna dengan role 'admin'.
  */
-export async function GET() {
-  try {
-    const supabase = createServerClient(cookies())
-    await authorizeAdmin(supabase)
+export async function GET(request: NextRequest) {
+  const cookieStore = cookies()
+  const supabaseSession = createServerClient(cookieStore)
 
-    const supabaseAdmin = createAdminClient(
+  try {
+    // 1. Verifikasi bahwa requester adalah admin
+    const {
+      data: { user: requester },
+    } = await supabaseSession.auth.getUser()
+    if (!requester) {
+      return NextResponse.json(
+        { message: 'Akses ditolak: Tidak terautentikasi' },
+        { status: 401 }
+      )
+    }
+    const { data: profile } = await supabaseSession
+      .from('profiles')
+      .select('role')
+      .eq('id', requester.id)
+      .single()
+    if (profile?.role !== 'admin') {
+      return NextResponse.json(
+        { message: 'Akses ditolak: Hanya admin yang diizinkan' },
+        { status: 403 }
+      )
+    }
+
+    // 2. Buat admin client untuk mengambil semua data
+    const supabaseAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
+    // 3. Ambil semua pengguna dari Auth dan semua profil dari database
     const {
       data: { users },
       error: usersError,
@@ -37,6 +54,7 @@ export async function GET() {
       .select('*')
     if (profilesError) throw profilesError
 
+    // 4. Gabungkan data auth dan profil
     const combinedUsers = users.map((user) => {
       const userProfile = profiles.find((p) => p.id === user.id)
       return {
@@ -52,9 +70,6 @@ export async function GET() {
 
     return NextResponse.json(combinedUsers)
   } catch (error: any) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ message: error.message }, { status: 403 })
-    }
     console.error('API GET Users Error:', error)
     return NextResponse.json(
       { message: `Gagal mengambil data pengguna: ${error.message}` },
@@ -64,40 +79,70 @@ export async function GET() {
 }
 
 /**
- * POST: Membuat pengguna baru (hanya admin).
+ * POST: Membuat pengguna baru.
+ * Hanya bisa diakses oleh pengguna dengan role 'admin'.
  */
 export async function POST(request: NextRequest) {
-  const supabase = createServerClient(cookies())
+  const cookieStore = cookies()
+  const supabaseSession = createServerClient(cookieStore)
+
   try {
-    await authorizeAdmin(supabase)
-
-    const body = await request.json()
-    const validation = newUserSchema.safeParse(body)
-
-    if (!validation.success) {
+    // 1. Verifikasi admin (tetap sama)
+    const {
+      data: { user: requester },
+    } = await supabaseSession.auth.getUser()
+    if (!requester) {
       return NextResponse.json(
-        {
-          message: 'Input tidak valid',
-          errors: validation.error.flatten().fieldErrors,
-        },
-        { status: 400 }
+        { message: 'Akses ditolak: Tidak terautentikasi' },
+        { status: 401 }
+      )
+    }
+    const { data: profile } = await supabaseSession
+      .from('profiles')
+      .select('role')
+      .eq('id', requester.id)
+      .single()
+    if (profile?.role !== 'admin') {
+      return NextResponse.json(
+        { message: 'Akses ditolak: Hanya admin yang diizinkan' },
+        { status: 403 }
       )
     }
 
-    const { email, password, full_name, role } = validation.data
-
-    const supabaseAdmin = createAdminClient(
+    // 2. Buat admin client (tetap sama)
+    const supabaseAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
+    // 3. Validasi input (tetap sama)
+    const { email, password, full_name, role } = await request.json()
+
+    if (!email || !password || !full_name) {
+      return NextResponse.json(
+        { message: 'Email, password, dan nama lengkap wajib diisi' },
+        { status: 400 }
+      )
+    }
+    if (password.length < 6) {
+      return NextResponse.json(
+        { message: 'Password minimal 6 karakter' },
+        { status: 400 }
+      )
+    }
+
+    // 4. Buat pengguna baru, masukkan data profil ke 'user_metadata'
+    // Ini agar trigger otomatis bisa mengambilnya
     const { data: newUser, error: signUpError } =
       await supabaseAdmin.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
-        user_metadata: { full_name, role },
+        user_metadata: {
+          full_name,
+          role: role || 'user', // Masukkan role ke metadata
+        },
       })
 
     if (signUpError) {
@@ -107,20 +152,33 @@ export async function POST(request: NextRequest) {
           { status: 409 }
         )
       }
-      throw signUpError
+      return NextResponse.json(
+        { message: `Gagal membuat pengguna di Auth: ${signUpError.message}` },
+        { status: 400 }
+      )
+    }
+    if (!newUser.user) {
+      return NextResponse.json(
+        { message: 'Gagal membuat pengguna di sistem otentikasi' },
+        { status: 500 }
+      )
     }
 
+    // ========================================================================
+    // PERBAIKAN: HAPUS BLOK INSERT PROFIL
+    // Proses ini sekarang sepenuhnya ditangani oleh trigger otomatis di database
+    // untuk menghindari error 'duplicate key'.
+    // ========================================================================
+
     return NextResponse.json(
-      { message: 'Pengguna baru berhasil ditambahkan', user: newUser.user },
+      { message: 'Pengguna baru berhasil ditambahkan' },
       { status: 201 }
     )
   } catch (error: any) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ message: error.message }, { status: 403 })
-    }
     console.error('API POST User Error:', error)
-    const errorMessage =
-      error.message || 'Terjadi kesalahan internal pada server'
-    return NextResponse.json({ message: errorMessage }, { status: 500 })
+    return NextResponse.json(
+      { message: 'Terjadi kesalahan internal pada server' },
+      { status: 500 }
+    )
   }
 }

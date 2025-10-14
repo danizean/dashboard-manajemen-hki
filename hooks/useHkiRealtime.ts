@@ -15,7 +15,7 @@ export function useHkiRealtime() {
 
   useEffect(() => {
     const supabase = createClient()
-
+    
     const channel = supabase
       .channel('hki_changes')
       .on(
@@ -23,7 +23,7 @@ export function useHkiRealtime() {
         { event: '*', schema: 'public', table: 'hki' },
         (payload) => {
           console.log('Perubahan realtime terdeteksi:', payload)
-
+          
           // Invalidate semua query yang berhubungan dengan 'hkiData'
           // Ini akan memicu React Query untuk me-refetch data secara otomatis.
           queryClient.invalidateQueries({ queryKey: ['hkiData'] })

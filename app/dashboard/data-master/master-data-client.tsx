@@ -1,16 +1,30 @@
 'use client'
 
-import React, { memo } from 'react'
+import React from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-// PERBAIKAN: Nama komponen diubah dari MasterCrudComponent menjadi MasterCrudTable
 import { MasterCrudTable } from './master-crud-components'
 import { JenisHKI, KelasHKI, Pengusul } from '@/lib/types'
-import { Copyright, Building, FileText } from 'lucide-react'
+import { Copyright, Building, FileText, type LucideIcon } from 'lucide-react'
 
 export type MasterDataType = 'jenis_hki' | 'kelas_hki' | 'pengusul'
 export type AnyMasterItem = JenisHKI | KelasHKI | Pengusul
 
-export const masterConfig = {
+type Config<T extends AnyMasterItem> = {
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  columns: { key: keyof T; label: string }[];
+  idKey: keyof T;
+  nameKey: keyof T;
+}
+
+type MasterConfig = {
+  jenis_hki: Config<JenisHKI>;
+  kelas_hki: Config<KelasHKI>;
+  pengusul: Config<Pengusul>;
+}
+
+export const masterConfig: MasterConfig = {
   jenis_hki: {
     title: 'Jenis HKI',
     description: 'Data referensi untuk tipe-tipe HKI yang tersedia.',
@@ -48,58 +62,51 @@ export const masterConfig = {
 }
 
 interface MasterDataClientProps {
-  initialJenis: JenisHKI[]
-  initialKelas: KelasHKI[]
-  initialPengusul: Pengusul[]
+  initialData: {
+    jenis_hki: JenisHKI[]
+    kelas_hki: KelasHKI[]
+    pengusul: Pengusul[]
+  }
 }
 
-export const MasterDataClient = memo(function MasterDataClient({
-  initialJenis,
-  initialKelas,
-  initialPengusul,
-}: MasterDataClientProps) {
-  return (
-    <Tabs defaultValue="jenis_hki" className="w-full">
-      <TabsList className="grid w-full grid-cols-3 h-12">
-        <TabsTrigger value="jenis_hki" className="gap-2 text-base md:text-sm">
-          <Copyright className="h-4 w-4" /> Jenis HKI
-        </TabsTrigger>
-        <TabsTrigger value="kelas_hki" className="gap-2 text-base md:text-sm">
-          <FileText className="h-4 w-4" /> Kelas HKI
-        </TabsTrigger>
-        <TabsTrigger value="pengusul" className="gap-2 text-base md:text-sm">
-          <Building className="h-4 w-4" /> Pengusul (OPD)
-        </TabsTrigger>
-      </TabsList>
+export function MasterDataClient({ initialData }: MasterDataClientProps) {
+  const tabs = Object.keys(masterConfig) as MasterDataType[];
 
+  return (
+    <Tabs defaultValue={tabs[0]} className="w-full">
+      <TabsList className={`grid w-full h-12 grid-cols-${tabs.length}`}>
+        {tabs.map((tabKey) => {
+          const config = masterConfig[tabKey];
+          return (
+            <TabsTrigger key={tabKey} value={tabKey} className="gap-2 text-base md:text-sm">
+              <config.icon className="h-4 w-4" /> {config.title}
+            </TabsTrigger>
+          );
+        })}
+      </TabsList>
+      
+      {/* ✅ PERBAIKAN: Render setiap tabel secara eksplisit untuk menjaga type safety */}
       <TabsContent value="jenis_hki" className="mt-4">
-        {/* PERBAIKAN: Nama komponen diubah */}
         <MasterCrudTable
           dataType="jenis_hki"
-          data={initialJenis}
+          data={initialData.jenis_hki}
           config={masterConfig.jenis_hki}
         />
       </TabsContent>
-
       <TabsContent value="kelas_hki" className="mt-4">
-        {/* PERBAIKAN: Nama komponen diubah */}
         <MasterCrudTable
           dataType="kelas_hki"
-          data={initialKelas}
+          data={initialData.kelas_hki}
           config={masterConfig.kelas_hki}
         />
       </TabsContent>
-
       <TabsContent value="pengusul" className="mt-4">
-        {/* PERBAIKAN: Nama komponen diubah */}
         <MasterCrudTable
           dataType="pengusul"
-          data={initialPengusul}
+          data={initialData.pengusul}
           config={masterConfig.pengusul}
         />
       </TabsContent>
     </Tabs>
-  )
-})
-
-MasterDataClient.displayName = 'MasterDataClient'
+  );
+}

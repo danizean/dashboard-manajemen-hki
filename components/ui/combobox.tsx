@@ -4,6 +4,7 @@ import * as React from 'react'
 import { Check, ChevronsUpDown, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+// ✨ FIX: Kembali menggunakan komponen Command bawaan dari shadcn/ui
 import {
   Command,
   CommandEmpty,
@@ -18,6 +19,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
+// ✨ UI/UX: Tambahkan motion untuk animasi
 import { motion, AnimatePresence } from 'framer-motion'
 
 interface ComboboxProps {
@@ -32,6 +34,7 @@ interface ComboboxProps {
   loading?: boolean
 }
 
+// ✨ REFACTOR: Memo-kan komponen agar tidak re-render jika props tidak berubah
 export const Combobox = React.memo(function Combobox({
   options,
   value,
@@ -49,13 +52,11 @@ export const Combobox = React.memo(function Combobox({
     return options.find((option) => option.value === value)?.label
   }, [options, value])
 
-  const handleSelect = React.useCallback(
-    (currentValue: string) => {
-      onChange(currentValue === value ? '' : currentValue)
-      setOpen(false)
-    },
-    [onChange, value]
-  )
+  // ✨ PERFORMA: Gunakan useCallback untuk stabilitas referensi fungsi
+  const handleSelect = React.useCallback((currentValue: string) => {
+    onChange(currentValue === value ? '' : currentValue)
+    setOpen(false)
+  }, [onChange, value]);
 
   const displayContent = value ? selectedLabel : placeholder
 
@@ -78,10 +79,11 @@ export const Combobox = React.memo(function Combobox({
         </Button>
       </PopoverTrigger>
 
+      {/* ✨ UI/UX: Gunakan AnimatePresence untuk animasi buka/tutup */}
       <AnimatePresence>
         {open && (
           <PopoverContent
-            asChild
+            asChild // Penting agar motion.div bisa mengambil alih styling
             className="w-[--radix-popover-trigger-width] max-w-xs sm:max-w-sm md:max-w-md p-0"
             align="start"
           >
@@ -102,6 +104,7 @@ export const Combobox = React.memo(function Combobox({
                       {options.map((option) => (
                         <CommandItem
                           key={option.value}
+                          // ✨ UX: Pencarian sekarang mencocokkan value dan label
                           value={`${option.value} ${option.label}`}
                           onSelect={() => handleSelect(option.value)}
                           className="truncate whitespace-nowrap"
@@ -109,9 +112,7 @@ export const Combobox = React.memo(function Combobox({
                           <Check
                             className={cn(
                               'mr-2 h-4 w-4',
-                              value === option.value
-                                ? 'opacity-100'
-                                : 'opacity-0'
+                              value === option.value ? 'opacity-100' : 'opacity-0'
                             )}
                           />
                           {option.label}
