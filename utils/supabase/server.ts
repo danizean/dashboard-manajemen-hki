@@ -3,8 +3,8 @@ import { cookies } from 'next/headers'
 import { Database } from '@/lib/database.types'
 
 /**
- * ✅ Utility untuk membuat Supabase client di Server Component, API Routes, atau Server Actions.
- * Pastikan variabel environment sudah terdefinisi di .env.local
+ * Utility untuk membuat Supabase client di Server Component atau API Routes.
+ * Menggunakan konteks otentikasi pengguna.
  */
 export function createClient(cookieStore: ReturnType<typeof cookies>) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -12,7 +12,7 @@ export function createClient(cookieStore: ReturnType<typeof cookies>) {
 
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error(
-      '❌ Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY in environment variables.'
+      'Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY.'
     )
   }
 
@@ -25,21 +25,49 @@ export function createClient(cookieStore: ReturnType<typeof cookies>) {
         try {
           cookieStore.set({ name, value, ...options })
         } catch (error) {
-          console.warn(`⚠️ Failed to set cookie "${name}":`, error)
-          // Dibiarkan kosong jika tidak bisa set cookie (misalnya di Route Handler)
+          // Dibiarkan kosong jika tidak bisa set cookie
         }
       },
       remove(name: string, options: CookieOptions) {
         try {
-          cookieStore.set({
-            name,
-            value: '',
-            ...options,
-            maxAge: 0, // Hapus cookie dengan benar
-          })
+          cookieStore.set({ name, value: '', ...options })
         } catch (error) {
-          console.warn(`⚠️ Failed to remove cookie "${name}":`, error)
+          // Dibiarkan kosong jika tidak bisa set cookie
         }
+      },
+    },
+  })
+}
+
+/**
+ * Utility untuk membuat Supabase client dengan hak akses service_role.
+ * Digunakan untuk operasi admin di backend yang mengabaikan RLS.
+ */
+export function createServiceRoleClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    throw new Error(
+      'Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.'
+    )
+  }
+
+  // FIX: Menyediakan implementasi dummy untuk cookie methods agar sesuai dengan tipe.
+  return createServerClient<Database>(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+    cookies: {
+      get() {
+        return undefined
+      },
+      set() {
+        // Tidak melakukan apa-apa
+      },
+      remove() {
+        // Tidak melakukan apa-apa
       },
     },
   })

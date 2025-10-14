@@ -1,12 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Opsi 'swcMinify' dihapus karena sudah menjadi default dan tidak dikenali lagi
   eslint: {
-    // Tetap abaikan linting saat build untuk fokus pada error utama
     ignoreDuringBuilds: true,
   },
   images: {
     unoptimized: true,
   },
-};
+}
 
-module.exports = nextConfig;
+module.exports = nextConfig

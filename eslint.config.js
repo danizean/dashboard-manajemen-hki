@@ -8,23 +8,23 @@ import prettierConfig from 'eslint-config-prettier'
 
 /** @type {import('eslint').Linter.FlatConfig[]} */
 export default [
-  // 1. Global ignores (menggantikan .eslintignore)
+  // 1. Global ignores
   {
     ignores: [
       'node_modules/',
       '.next/',
       'out/',
       'dist/',
-      'lib/database.types.ts', //
+      'lib/database.types.ts',
     ],
   },
 
-  // 2. Konfigurasi dasar yang berlaku untuk semua file
+  // 2. Konfigurasi dasar
   pluginJs.configs.recommended,
   ...tseslint.configs.recommended,
   {
     ...pluginReact,
-    files: ['**/*.{ts,tsx}'], // Terapkan aturan React hanya pada file TS/TSX
+    files: ['**/*.{ts,tsx}'],
     settings: {
       react: {
         version: 'detect',
@@ -51,19 +51,17 @@ export default [
       },
     },
     rules: {
-      // Menambahkan aturan penting untuk React Hooks
       ...pluginReactHooks.configs.recommended.rules,
-
-      // Aturan kustom Anda
       '@typescript-eslint/no-unused-vars': [
         'warn',
         { argsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/no-explicit-any': 'off',
-      'react/react-in-jsx-scope': 'off', 
-      'react/prop-types': 'off', 
+      'react/react-in-jsx-scope': 'off',
+      'react/prop-types': 'off',
     },
   },
 
+  // 4. Konfigurasi Prettier (harus di akhir)
   prettierConfig,
 ]

@@ -10,7 +10,7 @@ import { HKIEntry, FormOptions } from '@/lib/types'
 import { toast } from 'sonner'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress' // <-- Impor komponen Progress
+import { Progress } from '@/components/ui/progress'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useHkiRealtime } from '@/hooks/useHkiRealtime'
 
@@ -92,7 +92,8 @@ const PageHeader = ({
 }
 
 // --- Komponen Utama ---
-export function HKIClientPage({
+// ✅ FIX: Mengubah menjadi default export
+export default function HKIClientPage({
   formOptions,
   error: serverError,
 }: HKIClientPageProps) {

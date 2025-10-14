@@ -4,7 +4,7 @@ import { createClient } from '@/utils/supabase/server'
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { authorizeAdmin, AuthError } from '@/lib/auth/server' // ✅ Impor sekarang akan berhasil
+import { authorizeAdmin, AuthError } from '@/lib/auth/server'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,7 +37,11 @@ export async function PATCH(
     })
 
     if (!validationResult.success) {
-      return apiError('Input tidak valid.', 400, validationResult.error.flatten().fieldErrors)
+      return apiError(
+        'Input tidak valid.',
+        400,
+        validationResult.error.flatten().fieldErrors
+      )
     }
     const { id: hkiId, statusId } = validationResult.data
 
@@ -68,7 +72,10 @@ export async function PATCH(
     console.error('[API HKI STATUS PATCH] Error:', err)
     if (err instanceof AuthError) {
       // Menangkap error spesifik dari helper otorisasi
-      return apiError(err.message, err.message.includes('terautentikasi') ? 401 : 403)
+      return apiError(
+        err.message,
+        err.message.includes('terautentikasi') ? 401 : 403
+      )
     }
     if (err instanceof z.ZodError) {
       return apiError('Input tidak valid.', 400, err.flatten().fieldErrors)

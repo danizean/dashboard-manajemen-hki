@@ -1,5 +1,5 @@
 // lib/auth/server.ts
-import { SupabaseClient } from '@supabase/supabase-js'
+import { SupabaseClient, User } from '@supabase/supabase-js'
 import { Database } from '@/lib/database.types'
 
 /**
@@ -17,11 +17,10 @@ export class AuthError extends Error {
  * Helper terpusat untuk memverifikasi bahwa pengguna yang membuat request
  * sudah login dan memiliki peran 'admin'.
  * Melempar `AuthError` jika validasi gagal.
- *
- * @param supabase - Instance Supabase server client.
- * @returns {Promise<User>} Objek user jika validasi berhasil.
  */
-export async function authorizeAdmin(supabase: SupabaseClient<Database>) {
+export async function authorizeAdmin(
+  supabase: SupabaseClient<Database>
+): Promise<User> {
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -37,12 +36,13 @@ export async function authorizeAdmin(supabase: SupabaseClient<Database>) {
     .single()
 
   if (profileError) {
-    // Melempar error database jika query profil gagal
     throw new Error(`Kesalahan database: ${profileError.message}`)
   }
 
   if (profile?.role !== 'admin') {
-    throw new AuthError('Akses ditolak: Hanya admin yang dapat melakukan aksi ini.')
+    throw new AuthError(
+      'Akses ditolak: Hanya admin yang dapat melakukan aksi ini.'
+    )
   }
 
   return user
