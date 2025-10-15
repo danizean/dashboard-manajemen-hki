@@ -14,6 +14,8 @@ export async function GET(
   const cookieStore = cookies()
   const supabase = createClient(cookieStore)
   const id = parseInt(params.id, 10)
+  const { searchParams } = request.nextUrl
+  const disposition = searchParams.get('disposition') // 'inline' or 'attachment'
 
   if (!id || Number.isNaN(id)) {
     return NextResponse.json({ error: 'ID tidak valid' }, { status: 400 })
@@ -32,7 +34,7 @@ export async function GET(
 
     const { data: hkiEntry, error: fetchError } = await supabase
       .from('hki')
-      .select('sertifikat_pdf')
+      .select('sertifikat_pdf, pemohon(nama_pemohon)')
       .eq('id_hki', id)
       .single()
 
@@ -44,35 +46,40 @@ export async function GET(
       )
     }
 
-    if (!hkiEntry) {
-      return NextResponse.json(
-        { error: 'Entri tidak ditemukan' },
-        { status: 404 }
-      )
-    }
-
-    if (!hkiEntry.sertifikat_pdf) {
+    if (!hkiEntry || !hkiEntry.sertifikat_pdf) {
       return NextResponse.json(
         { error: 'Sertifikat tidak tersedia untuk entri ini' },
         { status: 404 }
       )
     }
 
+    const applicantName = hkiEntry.pemohon?.nama_pemohon || 'Tanpa_Nama'
+    const sanitizedName = applicantName
+      .replace(/[^a-zA-Z0-9 ]/g, '')
+      .replace(/ /g, '_')
+    const newFilename = `Sertifikat-${sanitizedName}.pdf`
+
+    // ✅ FIX: Logika diubah. Default adalah 'inline'. Hanya 'attachment' yang akan memaksa unduh.
+    const options =
+      disposition === 'attachment'
+        ? { download: newFilename } // Paksa unduh dengan nama kustom
+        : { download: false } // Biarkan browser menampilkannya (inline)
+
     const { data, error: urlError } = await supabase.storage
       .from(HKI_BUCKET)
-      .createSignedUrl(hkiEntry.sertifikat_pdf, 300) // 5 menit
+      .createSignedUrl(hkiEntry.sertifikat_pdf, 300, options) // 5 menit
 
     if (urlError) {
       console.error('Supabase signed URL error:', urlError)
       return NextResponse.json(
-        { error: 'Gagal membuat signed URL' },
+        { error: 'Gagal membuat URL aman' },
         { status: 500 }
       )
     }
 
     return NextResponse.json({
       signedUrl: data.signedUrl,
-      fileName: hkiEntry.sertifikat_pdf,
+      fileName: newFilename, // fileName tetap dikirim untuk digunakan jika perlu
     })
   } catch (error: any) {
     console.error('Unexpected error in signed-url route:', error)

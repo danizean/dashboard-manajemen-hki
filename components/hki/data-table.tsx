@@ -580,14 +580,21 @@ const DataTableRow = memo(
         return
       }
       const toastId = toast.loading('Mempersiapkan unduhan...')
-      fetch(`/api/hki/${entry.id_hki}/signed-url`)
+      // ✅ FIX: Tambahkan parameter `?disposition=attachment` untuk memaksa unduhan
+      fetch(`/api/hki/${entry.id_hki}/signed-url?disposition=attachment`)
         .then((res) => {
-          if (!res.ok) throw new Error('Gagal mendapatkan URL aman.')
+          if (!res.ok) {
+            return res.json().then((err) => {
+              throw new Error(err.message || 'Gagal mendapatkan URL aman.')
+            })
+          }
           return res.json()
         })
-        .then(({ signedUrl }) => {
-          window.open(signedUrl, '_blank')
-          toast.success('Unduhan dimulai.', { id: toastId })
+        .then(({ signedUrl, fileName }) => {
+          // Karena API sudah mengatur header Content-Disposition,
+          // kita hanya perlu mengarahkan browser ke URL tersebut.
+          window.location.href = signedUrl
+          toast.success(`'${fileName}' mulai diunduh.`, { id: toastId })
         })
         .catch((error) => {
           toast.error(error.message || 'Gagal mengunduh file.', { id: toastId })
@@ -786,7 +793,7 @@ const DataTableRow = memo(
                 </DropdownMenuItem>
                 {entry.sertifikat_pdf && (
                   <DropdownMenuItem onClick={handleDownloadPDF}>
-                    <Download className="mr-2 h-4 w-4" /> Lihat Sertifikat
+                    <Download className="mr-2 h-4 w-4" /> Unduh Sertifikat
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
@@ -1194,8 +1201,6 @@ export function DataTable({
     setDeleteAlert({ open: true, isBulk: true })
   }, [tableState.selectedRows])
 
-  // --- OPTIMISASI 1: Buat callback yang stabil untuk memilih satu baris ---
-  // Fungsi ini tidak akan dibuat ulang di setiap render, sehingga `DataTableRow` tidak ikut re-render saat baris lain dipilih.
   const handleSelectRow = useCallback(
     (id: number, checked: boolean) => {
       tableState.setSelectedRows((prevRows) => {
@@ -1211,8 +1216,6 @@ export function DataTable({
     [tableState.setSelectedRows]
   )
 
-  // --- OPTIMISASI 2: Buat callback yang stabil untuk memilih semua baris ---
-  // Sama seperti di atas, ini mencegah re-render yang tidak perlu pada komponen header.
   const handleSelectAll = useCallback(
     (checked: boolean) => {
       if (checked) {
@@ -1252,7 +1255,6 @@ export function DataTable({
                         data.length > 0 &&
                         tableState.selectedRows.size === data.length
                       }
-                      // --- OPTIMISASI: Gunakan callback yang stabil ---
                       onCheckedChange={handleSelectAll}
                       aria-label="Pilih semua baris"
                       disabled={isLoading || data.length === 0}
@@ -1327,7 +1329,6 @@ export function DataTable({
                     index={index}
                     pagination={tableState.pagination}
                     isSelected={tableState.selectedRows.has(entry.id_hki)}
-                    // --- OPTIMISASI: Gunakan callback yang stabil ---
                     onSelectRow={handleSelectRow}
                     onEdit={onEdit}
                     onDelete={handleDeleteSingle}

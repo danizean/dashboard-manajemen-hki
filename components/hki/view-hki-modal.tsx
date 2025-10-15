@@ -1,8 +1,7 @@
 // components/hki/view-hki-modal.tsx
-// FIX: Mengimpor tipe 'Variants' dari framer-motion.
 'use client'
 
-import React, { useCallback, memo, useMemo, ReactNode } from 'react'
+import React, { useCallback, memo, useMemo, ReactNode, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -15,11 +14,11 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { HKIEntry } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { Download, Eye, Paperclip, Loader2 } from 'lucide-react'
+import { Eye, Paperclip, Loader2, ChevronUp, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { getStatusStyle } from './hki-utils'
 import { useMutation } from '@tanstack/react-query'
-import { motion, Variants } from 'framer-motion' // <-- FIX: Tipe 'Variants' diimpor
+import { motion, Variants, AnimatePresence } from 'framer-motion'
 
 interface DetailItemProps {
   label: string
@@ -49,35 +48,57 @@ const DetailItem = memo(
 )
 DetailItem.displayName = 'DetailItem'
 
-const downloadSertifikatService = async (hkiId: number) => {
-  const res = await fetch(`/api/hki/${hkiId}/signed-url`)
+// ✅ FIX: Service diubah untuk secara eksplisit meminta URL 'inline'
+const getCertificateUrl = async ({
+  hkiId,
+  disposition,
+}: {
+  hkiId: number
+  disposition: 'inline' | 'attachment'
+}) => {
+  const url = `/api/hki/${hkiId}/signed-url?disposition=${disposition}`
+  const res = await fetch(url)
   const data = await res.json()
   if (!res.ok) {
-    throw new Error(data.message || 'Gagal mendapatkan URL unduhan.')
+    throw new Error(data.message || 'Gagal mendapatkan URL.')
   }
   return data
 }
 
 export const ViewHKIModal = memo(
   ({ isOpen, onClose, entry }: ViewHKIModalProps) => {
-    const { mutate: downloadFile, isPending: isDownloading } = useMutation({
-      mutationFn: downloadSertifikatService,
+    const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+
+    const { mutate: fetchPdfUrl, isPending: isLoadingPdf } = useMutation({
+      mutationFn: getCertificateUrl,
       onSuccess: (data) => {
-        window.open(data.signedUrl, '_blank')
-        toast.success('Unduhan dimulai di tab baru.')
+        setPdfUrl(data.signedUrl)
+        toast.success('Sertifikat berhasil dimuat.')
       },
       onError: (error) => {
         toast.error(
-          error instanceof Error ? error.message : 'Gagal mengunduh file.'
+          error instanceof Error ? error.message : 'Gagal memuat sertifikat.'
         )
       },
     })
 
-    const handleDownload = useCallback(() => {
-      if (entry?.id_hki) {
-        downloadFile(entry.id_hki)
+    const handleTogglePdfView = useCallback(() => {
+      if (pdfUrl) {
+        setPdfUrl(null)
+        return
       }
-    }, [entry, downloadFile])
+      if (entry?.id_hki) {
+        // ✅ FIX: Memastikan kita meminta versi 'inline' untuk ditampilkan
+        fetchPdfUrl({ hkiId: entry.id_hki, disposition: 'inline' })
+      }
+    }, [entry, fetchPdfUrl, pdfUrl])
+
+    const handleClose = () => {
+      onClose()
+      setTimeout(() => {
+        setPdfUrl(null)
+      }, 300)
+    }
 
     const statusStyle = useMemo(
       () => getStatusStyle(entry?.status_hki?.nama_status),
@@ -90,7 +111,6 @@ export const ViewHKIModal = memo(
     }
 
     const itemVariants: Variants = {
-      // <-- FIX: Tipe 'Variants' sekarang dikenali
       hidden: { y: 20, opacity: 0 },
       visible: {
         y: 0,
@@ -100,7 +120,7 @@ export const ViewHKIModal = memo(
     }
 
     return (
-      <Dialog open={isOpen} onOpenChange={onClose}>
+      <Dialog open={isOpen} onOpenChange={handleClose}>
         <DialogContent className="sm:max-w-3xl p-0 flex flex-col max-h-[90vh]">
           <motion.div
             variants={itemVariants}
@@ -196,7 +216,7 @@ export const ViewHKIModal = memo(
               </motion.dl>
 
               <motion.dl
-                className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6"
+                className="md:col-span-2 grid grid-cols-1 gap-x-8 gap-y-6"
                 variants={itemVariants}
               >
                 <DetailItem label="Keterangan Tambahan">
@@ -204,21 +224,33 @@ export const ViewHKIModal = memo(
                     {entry.keterangan || '-'}
                   </p>
                 </DetailItem>
+              </motion.dl>
+            </div>
+
+            {/* Bagian Sertifikat PDF */}
+            <div className="px-6 pb-6">
+              <div className="border-t pt-6">
                 <DetailItem label="Sertifikat PDF">
                   {entry.sertifikat_pdf ? (
                     <Button
                       variant="outline"
                       size="sm"
                       className="gap-2 w-fit"
-                      onClick={handleDownload}
-                      disabled={isDownloading}
+                      onClick={handleTogglePdfView}
+                      disabled={isLoadingPdf}
                     >
-                      {isDownloading ? (
+                      {isLoadingPdf ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : pdfUrl ? (
+                        <ChevronUp className="h-4 w-4" />
                       ) : (
-                        <Download className="h-4 w-4" />
+                        <ChevronDown className="h-4 w-4" />
                       )}
-                      {isDownloading ? 'Memproses...' : 'Unduh File'}
+                      {isLoadingPdf
+                        ? 'Memuat...'
+                        : pdfUrl
+                          ? 'Sembunyikan Sertifikat'
+                          : 'Lihat Sertifikat'}
                     </Button>
                   ) : (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground italic">
@@ -227,7 +259,36 @@ export const ViewHKIModal = memo(
                     </div>
                   )}
                 </DetailItem>
-              </motion.dl>
+
+                <AnimatePresence>
+                  {(isLoadingPdf || pdfUrl) && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0, marginTop: 0 }}
+                      animate={{
+                        height: '70vh',
+                        opacity: 1,
+                        marginTop: '1.5rem',
+                      }}
+                      exit={{ height: 0, opacity: 0, marginTop: 0 }}
+                      transition={{ duration: 0.3, ease: 'easeInOut' }}
+                      className="overflow-hidden"
+                    >
+                      {isLoadingPdf ? (
+                        <div className="flex flex-col items-center justify-center h-full text-muted-foreground rounded-lg border bg-muted/50">
+                          <Loader2 className="h-8 w-8 animate-spin mb-4" />
+                          <p>Memuat pratinjau sertifikat...</p>
+                        </div>
+                      ) : pdfUrl ? (
+                        <iframe
+                          src={pdfUrl}
+                          className="w-full h-full rounded-md border"
+                          title={`Sertifikat untuk ${entry.nama_hki}`}
+                        />
+                      ) : null}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
           </motion.div>
 
@@ -237,7 +298,7 @@ export const ViewHKIModal = memo(
             animate="visible"
           >
             <DialogFooter className="px-6 py-4 border-t bg-muted/40 sm:justify-end">
-              <Button variant="outline" onClick={onClose}>
+              <Button variant="outline" onClick={handleClose}>
                 Tutup
               </Button>
             </DialogFooter>
