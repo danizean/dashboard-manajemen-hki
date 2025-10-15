@@ -45,8 +45,6 @@ import { StatusHKI } from '@/lib/types'
 
 // Helper Types
 type ComboboxOption = { value: string; label: string }
-type ExportFormat = 'csv' | 'xlsx'
-type FilterType = 'year' | 'pengusul' | 'status'
 
 interface ExportModalProps {
   isOpen: boolean
@@ -56,11 +54,9 @@ interface ExportModalProps {
     pengusulOptions: ComboboxOption[]
     statusOptions: StatusHKI[]
   }
-  // ✅ NEW PROP: Untuk menampilkan skeleton loading saat options masih di-fetch
   isLoadingOptions?: boolean
 }
 
-// ✅ ZOD SCHEMA: Mendefinisikan struktur dan validasi form.
 const exportSchema = z.object({
   filterBy: z.enum(['year', 'pengusul', 'status']),
   filterValue: z.string().min(1, { message: 'Nilai filter harus dipilih.' }),
@@ -75,7 +71,6 @@ export function ExportModalRefactored({
   formOptions,
   isLoadingOptions = false,
 }: ExportModalProps) {
-  // ✅ REACT-HOOK-FORM: Manajemen state form yang terpusat.
   const form = useForm<ExportFormValues>({
     resolver: zodResolver(exportSchema),
     defaultValues: {
@@ -88,12 +83,10 @@ export function ExportModalRefactored({
   const { control, handleSubmit, watch, reset, setValue } = form
   const watchedFilterBy = watch('filterBy')
 
-  // Reset filterValue setiap kali filterBy berubah
   useEffect(() => {
     setValue('filterValue', '')
   }, [watchedFilterBy, setValue])
 
-  // ✅ REACT QUERY (useMutation): Mengelola proses ekspor data.
   const exportMutation = useMutation({
     mutationFn: (values: ExportFormValues) => {
       const filters = {
@@ -124,11 +117,10 @@ export function ExportModalRefactored({
   }
 
   const handleClose = () => {
-    reset() // Reset form state saat modal ditutup
+    reset()
     onClose()
   }
-  
-  // Memoized options for performance
+
   const tahunOptions = React.useMemo(
     () =>
       formOptions.tahunOptions.map((y) => ({
@@ -205,33 +197,33 @@ export function ExportModalRefactored({
         return null
     }
   }
-  
+
   const renderContent = () => {
     if (isLoadingOptions) {
       return (
         <div className="py-4 space-y-6">
-            <div className="space-y-3">
-                <Skeleton className="h-5 w-32" />
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    <Skeleton className="h-24 w-full" />
-                    <Skeleton className="h-24 w-full" />
-                    <Skeleton className="h-24 w-full" />
-                </div>
+          <div className="space-y-3">
+            <Skeleton className="h-5 w-32" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
             </div>
-            <div className="space-y-3">
-                <Skeleton className="h-5 w-32" />
-                <Skeleton className="h-10 w-full" />
-            </div>
-            <div className="space-y-3">
-                <Skeleton className="h-5 w-32" />
-                <Skeleton className="h-10 w-48" />
-            </div>
+          </div>
+          <div className="space-y-3">
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+          <div className="space-y-3">
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-10 w-48" />
+          </div>
         </div>
       )
     }
 
     return (
-       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <div className="py-4 space-y-6">
           <Controller
             name="filterBy"
@@ -242,7 +234,7 @@ export function ExportModalRefactored({
                 <RadioGroup
                   onValueChange={field.onChange}
                   value={field.value}
-                  className="grid grid-cols-2 sm:grid-cols-3 gap-3" // ✅ RESPONSIVE
+                  className="grid grid-cols-2 sm:grid-cols-3 gap-3"
                 >
                   {[
                     { value: 'year', label: 'Tahun', icon: CalendarDays },
@@ -250,7 +242,11 @@ export function ExportModalRefactored({
                     { value: 'status', label: 'Status', icon: BookCheck },
                   ].map(({ value, label, icon: Icon }) => (
                     <div key={value}>
-                      <RadioGroupItem value={value} id={value} className="sr-only" />
+                      <RadioGroupItem
+                        value={value}
+                        id={value}
+                        className="sr-only"
+                      />
                       <Label
                         htmlFor={value}
                         className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground [&:has([data-state=checked])]:border-primary cursor-pointer transition-all duration-200"
@@ -270,7 +266,11 @@ export function ExportModalRefactored({
               2. Pilih Nilai Filter
             </Label>
             {renderFilterInput()}
-             {form.formState.errors.filterValue && <p className="text-sm text-red-500">{form.formState.errors.filterValue.message}</p>}
+            {form.formState.errors.filterValue && (
+              <p className="text-sm text-red-500">
+                {form.formState.errors.filterValue.message}
+              </p>
+            )}
           </div>
 
           <Controller
@@ -286,11 +286,15 @@ export function ExportModalRefactored({
                 >
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="xlsx" id="xlsx" />
-                    <Label htmlFor="xlsx" className="cursor-pointer">Excel (.xlsx)</Label>
+                    <Label htmlFor="xlsx" className="cursor-pointer">
+                      Excel (.xlsx)
+                    </Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="csv" id="csv" />
-                    <Label htmlFor="csv" className="cursor-pointer">CSV (.csv)</Label>
+                    <Label htmlFor="csv" className="cursor-pointer">
+                      CSV (.csv)
+                    </Label>
                   </div>
                 </RadioGroup>
               </div>
@@ -302,12 +306,10 @@ export function ExportModalRefactored({
   }
 
   return (
-    // ✅ FRAMER MOTION: Animasi exit memerlukan AnimatePresence
     <AnimatePresence>
       {isOpen && (
         <Dialog open={isOpen} onOpenChange={handleClose}>
           <DialogContent asChild className="sm:max-w-lg">
-            {/* Wrapper untuk animasi */}
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}

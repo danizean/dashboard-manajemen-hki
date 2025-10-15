@@ -50,15 +50,17 @@ class ErrorBoundary extends React.Component<
               Terjadi Kesalahan Aplikasi
             </h1>
             <p className="mt-2 text-muted-foreground">
-              Maaf, terjadi kesalahan yang tidak terduga. Silakan coba lagi
-              atau hubungi administrator jika masalah berlanjut.
+              Maaf, terjadi kesalahan yang tidak terduga. Silakan coba lagi atau
+              hubungi administrator jika masalah berlanjut.
             </p>
             {/* Menampilkan detail error teknis HANYA di mode development.
               Ini sangat membantu saat debugging, namun aman di production.
             */}
             {process.env.NODE_ENV === 'development' && this.state.error && (
               <pre className="mt-4 w-full overflow-x-auto rounded-md bg-muted p-3 text-left text-xs text-muted-foreground">
-                <code>{this.state.error.stack || this.state.error.message}</code>
+                <code>
+                  {this.state.error.stack || this.state.error.message}
+                </code>
               </pre>
             )}
             <Button

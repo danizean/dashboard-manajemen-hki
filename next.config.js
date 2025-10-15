@@ -1,10 +1,24 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // output: 'export',
   eslint: {
     ignoreDuringBuilds: true,
   },
-  images: { unoptimized: true },
-}
+  images: {
+    unoptimized: true,
+  },
+  webpack: (config) => {
+    config.experiments = { ...config.experiments, topLevelAwait: true };
+    // Hapus rule .mjs yang lama
+    // config.module.rules.push({
+    //   test: /.*\.mjs$/,
+    //   type: "javascript/auto",
+    //   resolve: {
+    //     fullySpecified: false,
+    //   },
+    // });
 
-module.exports = nextConfig
+    return config
+  },
+};
+
+module.exports = nextConfig;

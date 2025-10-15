@@ -1,27 +1,55 @@
+import globals from 'globals'
+import pluginJs from '@eslint/js'
+import tseslint from 'typescript-eslint'
+import pluginReactConfig from 'eslint-plugin-react/configs/recommended.js'
 import nextPlugin from '@next/eslint-plugin-next'
-import securityPlugin from 'eslint-plugin-security'
+import prettierConfig from 'eslint-config-prettier'
 
+/** @type {import('eslint').Linter.FlatConfig[]} */
 export default [
   {
-    ignores: ['.next/**', 'node_modules/**'],
+    ignores: ['node_modules/', '.next/', 'dist/'],
   },
   {
-    files: ['**/*.js', '**/*.ts', '**/*.tsx'],
+    files: ['**/*.{js,mjs,cjs,ts,jsx,tsx}'],
     languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
+      parser: tseslint.parser,
       parserOptions: {
-        ecmaVersion: 2022,
-        sourceType: 'module',
+        project: true, 
       },
     },
     plugins: {
+      '@typescript-eslint': tseslint.plugin,
       '@next/next': nextPlugin,
-      security: securityPlugin,
+      react: pluginReactConfig.plugins.react,
     },
-    rules: {
-      ...nextPlugin.configs['core-web-vitals'].rules,
-      ...securityPlugin.configs.recommended.rules,
-      'no-console': 'warn',
-      '@next/next/no-img-element': 'off',
+    settings: {
+      react: {
+        version: 'detect',
+      },
     },
   },
-]
+  pluginJs.configs.recommended,
+  ...tseslint.configs.recommended,
+  pluginReactConfig,
+  {
+    rules: {
+      ...nextPlugin.configs.recommended.rules,
+      ...nextPlugin.configs['core-web-vitals'].rules,
+    },
+  },
+
+  {
+    rules: {
+      '@typescript-eslint/no-unused-vars': 'warn',
+      '@typescript-eslint/no-explicit-any': 'off',
+      'react/react-in-jsx-scope': 'off', 
+      'react/prop-types': 'off', 
+    },
+  },
+  prettierConfig,
+];

@@ -12,10 +12,24 @@ import { Menu, LogOut, Bell, Settings, ChevronRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase-browser'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from '@/components/ui/breadcrumb'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb'
 
 interface TopbarProps {
   sidebarOpen: boolean
@@ -31,7 +45,7 @@ const TopbarBreadcrumbs = memo(function TopbarBreadcrumbs() {
 
   const breadcrumbs = useMemo(() => {
     const pathParts = pathname.split('/').filter(Boolean)
-    if (pathParts[0] !== 'dashboard') return [];
+    if (pathParts[0] !== 'dashboard') return []
 
     return pathParts.slice(1).map((part, index) => {
       const href = `/dashboard/${pathParts.slice(1, index + 2).join('/')}`
@@ -53,10 +67,14 @@ const TopbarBreadcrumbs = memo(function TopbarBreadcrumbs() {
             <BreadcrumbSeparator />
             <BreadcrumbItem>
               {index === breadcrumbs.length - 1 ? (
-                <BreadcrumbPage className="capitalize">{crumb.label}</BreadcrumbPage>
+                <BreadcrumbPage className="capitalize">
+                  {crumb.label}
+                </BreadcrumbPage>
               ) : (
                 <BreadcrumbLink asChild>
-                  <Link href={crumb.href} className="capitalize">{crumb.label}</Link>
+                  <Link href={crumb.href} className="capitalize">
+                    {crumb.label}
+                  </Link>
                 </BreadcrumbLink>
               )}
             </BreadcrumbItem>
@@ -66,8 +84,7 @@ const TopbarBreadcrumbs = memo(function TopbarBreadcrumbs() {
     </Breadcrumb>
   )
 })
-TopbarBreadcrumbs.displayName = 'TopbarBreadcrumbs';
-
+TopbarBreadcrumbs.displayName = 'TopbarBreadcrumbs'
 
 export function Topbar({ sidebarOpen, setSidebarOpen }: TopbarProps) {
   const [user, setUser] = useState<User | null>(null)
@@ -77,14 +94,18 @@ export function Topbar({ sidebarOpen, setSidebarOpen }: TopbarProps) {
 
   useEffect(() => {
     const fetchInitialUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
       setUser(user)
       setLoadingUser(false)
     }
 
     fetchInitialUser()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
     })
 
@@ -124,7 +145,6 @@ export function Topbar({ sidebarOpen, setSidebarOpen }: TopbarProps) {
           </Button>
 
           <TopbarBreadcrumbs />
-
         </div>
 
         {/* Right Section */}
@@ -160,7 +180,9 @@ export function Topbar({ sidebarOpen, setSidebarOpen }: TopbarProps) {
                 </Avatar>
                 <div className="hidden text-left lg:block">
                   <span className="block text-sm font-semibold text-foreground">
-                    {loadingUser ? 'Memuat...' : (user?.email?.split('@')[0] || 'Admin')}
+                    {loadingUser
+                      ? 'Memuat...'
+                      : user?.email?.split('@')[0] || 'Admin'}
                   </span>
                 </div>
               </Button>
@@ -169,7 +191,9 @@ export function Topbar({ sidebarOpen, setSidebarOpen }: TopbarProps) {
               <DropdownMenuLabel>
                 <p className="font-semibold">Akun Saya</p>
                 <p className="truncate text-xs font-normal text-muted-foreground">
-                  {loadingUser ? 'Memuat email...' : user?.email || 'Tidak login'}
+                  {loadingUser
+                    ? 'Memuat email...'
+                    : user?.email || 'Tidak login'}
                 </p>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
